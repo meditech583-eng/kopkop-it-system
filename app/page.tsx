@@ -329,6 +329,10 @@ function computeAssetHealth(asset: ITAsset, audit?: DeviceStatusCheck | null) {
   return { score, label, alerts };
 }
 
+function buildQrUrl(value: string) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(value)}`;
+}
+
 function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -440,6 +444,85 @@ function HealthIndicator({ score }: { score: number }) {
   );
 }
 
+function QRLabelCard({ asset }: { asset: ITAsset }) {
+  const qrUrl = buildQrUrl(asset.asset_tag);
+  const subtitle = `${asset.item_name} • ${asset.location || "No location"}`;
+
+  async function handleDownloadQr() {
+    try {
+      const response = await fetch(qrUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `${asset.asset_tag.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_qr.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(qrUrl, "_blank");
+    }
+  }
+
+  function handlePrintSingle() {
+    const html = `
+      <html>
+        <head>
+          <title>${asset.asset_tag} QR Label</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; text-align: center; color: #111827; }
+            .label { border: 2px solid #cbd5e1; border-radius: 18px; padding: 24px; width: 320px; margin: 0 auto; }
+            .title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+            .subtitle { font-size: 14px; color: #475569; margin-bottom: 12px; }
+            .qr { width: 260px; height: 260px; object-fit: contain; margin: 12px auto; display: block; border: 1px solid #e2e8f0; padding: 8px; background: white; }
+            .value { font-size: 18px; font-weight: 700; margin-top: 14px; }
+            .meta { font-size: 12px; color: #64748b; margin-top: 6px; word-break: break-word; }
+          </style>
+        </head>
+        <body>
+          <div class="label">
+            <div class="title">${asset.asset_tag}</div>
+            <div class="subtitle">${subtitle}</div>
+            <img class="qr" src="${qrUrl}" alt="QR Code" />
+            <div class="value">${asset.asset_tag}</div>
+            <div class="meta">KOPKOP College ICT Asset System</div>
+          </div>
+        </body>
+      </html>
+    `;
+    const printWindow = window.open("", "_blank", "width=500,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col items-center text-center">
+        <img
+          src={qrUrl}
+          alt={`QR code for ${asset.asset_tag}`}
+          className="h-56 w-56 rounded-2xl border border-slate-200 bg-white p-2"
+        />
+        <h3 className="mt-4 text-lg font-bold text-slate-900">{asset.asset_tag}</h3>
+        <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+        <p className="mt-1 text-sm text-slate-500">QR value: {asset.asset_tag}</p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <button type="button" onClick={handleDownloadQr} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+            Download QR
+          </button>
+          <button type="button" onClick={handlePrintSingle} className="rounded-2xl bg-cyan-700 px-4 py-2 text-sm font-semibold text-white">
+            Print Label
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [assets, setAssets] = useState<ITAsset[]>([]);
   const [deviceChecks, setDeviceChecks] = useState<DeviceStatusCheck[]>([]);
@@ -456,13 +539,14 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [performanceFilter, setPerformanceFilter] = useState("All");
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "scan" | "audit" | "history">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "scan" | "labels" | "audit" | "history">("dashboard");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const [scannerSupported, setScannerSupported] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerStatus, setScannerStatus] = useState("Ready to scan asset tags or serial numbers.");
   const [manualScanCode, setManualScanCode] = useState("");
+  const [labelSearch, setLabelSearch] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
@@ -476,7 +560,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     return () => {
       stopScanner();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadAssets() {
@@ -555,6 +638,19 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       return matchesSearch && matchesStatus && matchesCategory && matchesPerformance;
     });
   }, [enrichedAssets, search, statusFilter, categoryFilter, performanceFilter]);
+
+  const labelAssets = useMemo(() => {
+    const term = labelSearch.trim().toLowerCase();
+    return enrichedAssets.filter((asset) => {
+      if (!term) return true;
+      return (
+        asset.asset_tag.toLowerCase().includes(term) ||
+        asset.item_name.toLowerCase().includes(term) ||
+        (asset.location || "").toLowerCase().includes(term) ||
+        (asset.assigned_to || "").toLowerCase().includes(term)
+      );
+    });
+  }, [enrichedAssets, labelSearch]);
 
   const selectedAsset = useMemo(
     () => filteredAssets.find((asset) => asset.id === selectedAssetId) || filteredAssets[0] || null,
@@ -646,7 +742,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       setScannerStatus(`No asset found for code: ${code}`);
       return false;
     }
-
     setManualScanCode(code);
     setSelectedAssetId(matched.id);
     setActiveTab("inventory");
@@ -685,15 +780,11 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           scanLoopRef.current = window.setTimeout(scan, 400);
           return;
         }
-
         try {
           const results = await detector.detect(videoRef.current);
           const value = results?.[0]?.rawValue;
           if (value && handleScannedCode(value)) return;
-        } catch {
-          // keep retrying quietly
-        }
-
+        } catch {}
         scanLoopRef.current = window.setTimeout(scan, 600);
       };
 
@@ -727,6 +818,63 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       return;
     }
     handleScannedCode(manualScanCode.trim());
+  }
+
+  function printAllVisibleLabels() {
+    const items = labelAssets.slice(0, 24);
+    if (items.length === 0) {
+      alert("No labels to print.");
+      return;
+    }
+
+    const labelsHtml = items
+      .map((asset) => {
+        const qrUrl = buildQrUrl(asset.asset_tag);
+        return `
+          <div class="label">
+            <div class="asset-tag">${asset.asset_tag}</div>
+            <div class="asset-name">${asset.item_name}</div>
+            <div class="asset-meta">${asset.location || "No location"}</div>
+            <img src="${qrUrl}" alt="QR ${asset.asset_tag}" />
+            <div class="qr-value">${asset.asset_tag}</div>
+          </div>
+        `;
+      })
+      .join("");
+
+    const html = `
+      <html>
+        <head>
+          <title>KOPKOP Asset Labels</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 16px; color: #111827; }
+            .sheet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+            .label {
+              border: 1.5px solid #cbd5e1;
+              border-radius: 14px;
+              padding: 10px;
+              text-align: center;
+              break-inside: avoid;
+            }
+            .asset-tag { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+            .asset-name { font-size: 11px; color: #334155; min-height: 28px; }
+            .asset-meta { font-size: 10px; color: #64748b; margin-bottom: 6px; }
+            img { width: 120px; height: 120px; object-fit: contain; display: block; margin: 0 auto 6px; }
+            .qr-value { font-size: 11px; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <div class="sheet">${labelsHtml}</div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   function fillAssetForm(asset: ITAsset) {
@@ -1130,7 +1278,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
         <div className="rounded-3xl bg-white px-8 py-6 text-center shadow-sm">
           <p className="text-lg font-semibold text-slate-900">Loading KOPKOP ICT system...</p>
-          <p className="mt-2 text-sm text-slate-500">Fetching inventory, specs, scan tools, and audit records.</p>
+          <p className="mt-2 text-sm text-slate-500">Fetching inventory, specs, labels, scan tools, and audit records.</p>
         </div>
       </div>
     );
@@ -1145,7 +1293,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">KOPKOP College</p>
               <h1 className="mt-2 text-3xl font-bold sm:text-4xl">ICT Asset, Device Health & Audit System</h1>
               <p className="mt-3 max-w-3xl text-sm text-slate-200 sm:text-base">
-                Centralized inventory for desktops, laptops, device specifications, dashboard graphs, barcode and QR scanning, audit results, and PDF reporting.
+                Centralized inventory for desktops, laptops, device specifications, dashboard graphs, barcode and QR scanning, label printing, audit results, and PDF reporting.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -1294,6 +1442,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             ["dashboard", "Dashboard"],
             ["inventory", "Inventory"],
             ["scan", "Scan Device"],
+            ["labels", "QR Labels"],
             ["audit", "Quick Audit"],
             ["history", "Audit History"],
           ].map(([key, label]) => (
@@ -1312,25 +1461,14 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
         {activeTab === "scan" && (
           <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle
-              title="Barcode / QR scanning"
-              subtitle="Scan an asset tag or serial number to open the correct device record instantly."
-            />
+            <SectionTitle title="Barcode / QR scanning" subtitle="Scan an asset tag or serial number to open the correct device record instantly." />
             <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
               <div className="rounded-3xl border border-slate-200 p-5">
                 <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={startScanner}
-                    className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-                  >
+                  <button type="button" onClick={startScanner} className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
                     Open Camera Scanner
                   </button>
-                  <button
-                    type="button"
-                    onClick={stopScanner}
-                    className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                  >
+                  <button type="button" onClick={stopScanner} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
                     Stop Scanner
                   </button>
                 </div>
@@ -1366,10 +1504,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                     placeholder="Example: KC-LT5QS or serial number"
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                   />
-                  <button
-                    type="submit"
-                    className="w-full rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white"
-                  >
+                  <button type="submit" className="w-full rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white">
                     Scan & Open Device
                   </button>
                 </form>
@@ -1377,7 +1512,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                 <div className="mt-6 rounded-2xl bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Best practice</p>
                   <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                    <li>• Print labels using the asset tag as the barcode or QR value.</li>
+                    <li>• Print labels using the asset tag as the QR value.</li>
                     <li>• Keep the same asset tag in the system and on the physical device.</li>
                     <li>• You can also scan the serial number if it is saved in the system.</li>
                   </ul>
@@ -1395,13 +1530,47 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           </div>
         )}
 
+        {activeTab === "labels" && (
+          <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+            <SectionTitle title="QR generator + print labels" subtitle="Generate and print clean labels for devices using the asset tag as the QR value." />
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <input
+                value={labelSearch}
+                onChange={(e) => setLabelSearch(e.target.value)}
+                placeholder="Search labels by asset tag, name, location, or user"
+                className="w-full max-w-xl rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+              />
+              <button
+                type="button"
+                onClick={printAllVisibleLabels}
+                className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+              >
+                Print Visible Labels
+              </button>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+              {labelAssets.slice(0, 12).map((asset) => (
+                <QRLabelCard key={asset.id} asset={asset} />
+              ))}
+            </div>
+
+            {labelAssets.length === 0 ? (
+              <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No assets matched your label search.</div>
+            ) : null}
+
+            {labelAssets.length > 12 ? (
+              <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                Showing first 12 labels. Use <span className="font-semibold">Print Visible Labels</span> to print up to 24 matching labels at once.
+              </div>
+            ) : null}
+          </div>
+        )}
+
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.55fr_1fr]">
           <div className="space-y-6">
             <div className="rounded-3xl bg-white p-5 shadow-sm">
-              <SectionTitle
-                title="Search, filter, and review assets"
-                subtitle="Find a device quickly and inspect its technical profile, performance, and current usage."
-              />
+              <SectionTitle title="Search, filter, and review assets" subtitle="Find a device quickly and inspect its technical profile, performance, and current usage." />
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <input
                   value={search}
@@ -1432,12 +1601,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
               </div>
             </div>
 
-            {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan") && (
+            {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan" || activeTab === "labels") && (
               <div className="rounded-3xl bg-white p-5 shadow-sm">
-                <SectionTitle
-                  title="Inventory overview"
-                  subtitle="Select a device to review its specs, condition, update status, and recommendation."
-                />
+                <SectionTitle title="Inventory overview" subtitle="Select a device to review its specs, condition, update status, and recommendation." />
                 <div className="overflow-hidden rounded-3xl border border-slate-200">
                   <div className="max-h-[620px] overflow-auto">
                     <table className="min-w-full text-sm">
@@ -1532,7 +1698,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           </div>
 
           <div className="space-y-6">
-            {selectedAsset && (activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan") ? (
+            {selectedAsset && (activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan" || activeTab === "labels") ? (
               <div className="rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Selected device profile" subtitle="Detailed asset record with technical data and management recommendation." />
                 <div className="space-y-4">
@@ -1620,6 +1786,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                     </button>
                     <button type="button" onClick={() => openAuditForAsset(selectedAsset)} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white">
                       New Audit
+                    </button>
+                    <button type="button" onClick={() => setActiveTab("labels")} className="rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white">
+                      Open QR Label
                     </button>
                     <button type="button" onClick={() => handleDeleteAsset(selectedAsset.id)} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
                       Delete Asset
