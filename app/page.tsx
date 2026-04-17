@@ -89,6 +89,53 @@ type DeviceStatusCheck = {
   created_at: string;
 };
 
+
+
+type MaintenanceStatus = "Open" | "In Progress" | "Waiting for Parts" | "Completed" | "Cancelled";
+type MaintenancePriority = "Low" | "Medium" | "High" | "Critical";
+
+type MaintenanceRecord = {
+  id: number;
+  asset_id: number | null;
+  asset_tag: string | null;
+  item_name: string | null;
+  issue: string | null;
+  priority: MaintenancePriority | null;
+  status: MaintenanceStatus | null;
+  assigned_to: string | null;
+  reported_by: string | null;
+  technician: string | null;
+  notes: string | null;
+  action_taken: string | null;
+  resolution_notes: string | null;
+  date_reported: string | null;
+  repair_date: string | null;
+  closed_date: string | null;
+  last_status_change: string | null;
+  previous_asset_status: AssetStatus | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+type MaintenanceFormState = {
+  id: number | null;
+  assetId: string;
+  assetTag: string;
+  itemName: string;
+  issue: string;
+  priority: MaintenancePriority;
+  status: MaintenanceStatus;
+  assignedTo: string;
+  reportedBy: string;
+  technician: string;
+  notes: string;
+  actionTaken: string;
+  resolutionNotes: string;
+  dateReported: string;
+  repairDate: string;
+  previousAssetStatus: AssetStatus;
+};
+
 type AssetFormState = {
   assetTag: string;
   itemName: string;
@@ -189,6 +236,25 @@ const EMPTY_AUDIT_FORM: AuditFormState = {
   healthScore: "100",
   issueDetected: false,
   remarks: "",
+};
+
+const EMPTY_MAINTENANCE_FORM: MaintenanceFormState = {
+  id: null,
+  assetId: "",
+  assetTag: "",
+  itemName: "",
+  issue: "",
+  priority: "Medium",
+  status: "Open",
+  assignedTo: "",
+  reportedBy: "IT Staff",
+  technician: "",
+  notes: "",
+  actionTaken: "",
+  resolutionNotes: "",
+  dateReported: new Date().toISOString().slice(0, 10),
+  repairDate: "",
+  previousAssetStatus: "In Use",
 };
 
 const DIVISIONS = [
@@ -526,20 +592,23 @@ function QRLabelCard({ asset }: { asset: ITAsset }) {
 export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [assets, setAssets] = useState<ITAsset[]>([]);
   const [deviceChecks, setDeviceChecks] = useState<DeviceStatusCheck[]>([]);
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingAsset, setSavingAsset] = useState(false);
   const [savingAudit, setSavingAudit] = useState(false);
+  const [savingMaintenance, setSavingMaintenance] = useState(false);
   const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
   const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
   const [auditForm, setAuditForm] = useState<AuditFormState>(EMPTY_AUDIT_FORM);
+  const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormState>(EMPTY_MAINTENANCE_FORM);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [performanceFilter, setPerformanceFilter] = useState("All");
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "scan" | "labels" | "audit" | "history">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "scan" | "labels" | "maintenance" | "audit" | "history">("dashboard");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const [scannerSupported, setScannerSupported] = useState(false);
@@ -547,6 +616,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [scannerStatus, setScannerStatus] = useState("Ready to scan asset tags or serial numbers.");
   const [manualScanCode, setManualScanCode] = useState("");
   const [labelSearch, setLabelSearch] = useState("");
+  const [maintenanceSearch, setMaintenanceSearch] = useState("");
+  const [maintenanceStatusFilter, setMaintenanceStatusFilter] = useState("All");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
@@ -577,11 +648,21 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     setDeviceChecks((data || []) as DeviceStatusCheck[]);
   }
 
+
+  async function loadMaintenance() {
+    const { data, error } = await supabase
+      .from("maintenance_records")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    setMaintenanceRecords((data || []) as MaintenanceRecord[]);
+  }
+
   async function refreshAll(showBusy = true) {
     try {
       if (showBusy) setRefreshing(true);
       setLoading(true);
-      await Promise.all([loadAssets(), loadDeviceChecks()]);
+      await Promise.all([loadAssets(), loadDeviceChecks(), loadMaintenance()]);
       setLastSyncedAt(new Date().toLocaleString());
     } catch (error) {
       console.error(error);
@@ -660,6 +741,38 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   useEffect(() => {
     if (selectedAsset && selectedAssetId !== selectedAsset.id) setSelectedAssetId(selectedAsset.id);
   }, [selectedAsset, selectedAssetId]);
+
+  const maintenanceAssetsById = useMemo(() => {
+    const map = new Map<number, EnrichedAsset>();
+    for (const asset of enrichedAssets) map.set(asset.id, asset);
+    return map;
+  }, [enrichedAssets]);
+
+  const filteredMaintenanceRecords = useMemo(() => {
+    const term = maintenanceSearch.trim().toLowerCase();
+    return maintenanceRecords.filter((record) => {
+      const matchesSearch =
+        !term ||
+        (record.asset_tag || "").toLowerCase().includes(term) ||
+        (record.item_name || "").toLowerCase().includes(term) ||
+        (record.issue || "").toLowerCase().includes(term) ||
+        (record.technician || "").toLowerCase().includes(term) ||
+        (record.assigned_to || "").toLowerCase().includes(term);
+
+      const matchesStatus = maintenanceStatusFilter === "All" || (record.status || "Open") === maintenanceStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [maintenanceRecords, maintenanceSearch, maintenanceStatusFilter]);
+
+  const maintenanceStats = useMemo(() => {
+    const open = maintenanceRecords.filter((m) => m.status === "Open").length;
+    const inProgress = maintenanceRecords.filter((m) => m.status === "In Progress").length;
+    const waiting = maintenanceRecords.filter((m) => m.status === "Waiting for Parts").length;
+    const completed = maintenanceRecords.filter((m) => m.status === "Completed").length;
+    const cancelled = maintenanceRecords.filter((m) => m.status === "Cancelled").length;
+    const critical = maintenanceRecords.filter((m) => m.priority === "Critical" && m.status !== "Completed" && m.status !== "Cancelled").length;
+    return { open, inProgress, waiting, completed, cancelled, critical };
+  }, [maintenanceRecords]);
 
   const stats = useMemo(() => {
     const total = enrichedAssets.length;
@@ -877,6 +990,269 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     printWindow.print();
   }
 
+  function getMaintenancePriority(asset: EnrichedAsset): MaintenancePriority {
+    if (asset.displayScore < 40) return "Critical";
+    if (asset.displayScore < 65) return "High";
+    if (asset.displayScore < 85) return "Medium";
+    return "Low";
+  }
+
+  function getAssetStatusFromMaintenance(status: MaintenanceStatus, previousStatus?: AssetStatus | null): AssetStatus {
+    if (status === "Completed" || status === "Cancelled") return previousStatus || "In Use";
+    return "Under Repair";
+  }
+
+  async function syncAssetStatusForMaintenance(
+    assetId: number | null,
+    nextStatus: MaintenanceStatus,
+    previousStatus?: AssetStatus | null
+  ) {
+    if (!assetId) return;
+    const assetStatus = getAssetStatusFromMaintenance(nextStatus, previousStatus);
+    const { error } = await supabase
+      .from("it_assets")
+      .update({ status: assetStatus })
+      .eq("id", assetId);
+    if (error) throw error;
+  }
+
+  function resetMaintenanceForm() {
+    setMaintenanceForm({
+      ...EMPTY_MAINTENANCE_FORM,
+      dateReported: new Date().toISOString().slice(0, 10),
+    });
+  }
+
+  function createMaintenance(asset: EnrichedAsset) {
+    setMaintenanceForm({
+      id: null,
+      assetId: String(asset.id),
+      assetTag: asset.asset_tag,
+      itemName: asset.item_name,
+      issue: asset.alerts[0] || "",
+      priority: getMaintenancePriority(asset),
+      status: "Open",
+      assignedTo: asset.assigned_to || "",
+      reportedBy: "IT Staff",
+      technician: "",
+      notes: asset.recommendation || "",
+      actionTaken: "",
+      resolutionNotes: "",
+      dateReported: new Date().toISOString().slice(0, 10),
+      repairDate: "",
+      previousAssetStatus: asset.status || "In Use",
+    });
+    setSelectedAssetId(asset.id);
+    setActiveTab("maintenance");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+
+  async function ensureAutoMaintenanceTicket(
+    asset: ITAsset,
+    healthScore: number,
+    auditRemarks?: string | null
+  ) {
+    if (healthScore >= 40) return false;
+
+    const autoIssue = "Auto-detected critical device condition";
+
+    const { data: existingOpenTickets, error: existingError } = await supabase
+      .from("maintenance_records")
+      .select("id")
+      .eq("asset_id", asset.id)
+      .in("status", ["Open", "In Progress", "Waiting for Parts"])
+      .limit(1);
+
+    if (existingError) throw existingError;
+    if (existingOpenTickets && existingOpenTickets.length > 0) return false;
+
+    const alerts = getHealthAlerts(asset);
+    const recommendation = inferRecommendation(asset, healthScore);
+    const notes = [
+      `Health score: ${healthScore}%`,
+      alerts.length ? `Detected alerts: ${alerts.join(", ")}` : null,
+      recommendation ? `Recommendation: ${recommendation}` : null,
+      auditRemarks?.trim() ? `Audit remarks: ${auditRemarks.trim()}` : null,
+      "This ticket was created automatically because the device was marked Critical.",
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+    const { error } = await supabase.from("maintenance_records").insert([
+      {
+        asset_id: asset.id,
+        asset_tag: asset.asset_tag,
+        item_name: asset.item_name,
+        issue: autoIssue,
+        priority: "Critical",
+        status: "Open",
+        assigned_to: asset.assigned_to || "IT Department",
+        reported_by: "System Auto Trigger",
+        technician: null,
+        notes,
+        action_taken: null,
+        resolution_notes: null,
+        date_reported: new Date().toISOString().slice(0, 10),
+        repair_date: null,
+        previous_asset_status: asset.status || "In Use",
+        last_status_change: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+
+    if (error) throw error;
+
+    await syncAssetStatusForMaintenance(asset.id, "Open", asset.status || "In Use");
+    return true;
+  }
+
+  function editMaintenance(record: MaintenanceRecord) {
+    setMaintenanceForm({
+      id: record.id,
+      assetId: record.asset_id ? String(record.asset_id) : "",
+      assetTag: record.asset_tag || "",
+      itemName: record.item_name || "",
+      issue: record.issue || "",
+      priority: record.priority || "Medium",
+      status: record.status || "Open",
+      assignedTo: record.assigned_to || "",
+      reportedBy: record.reported_by || "IT Staff",
+      technician: record.technician || "",
+      notes: record.notes || "",
+      actionTaken: record.action_taken || "",
+      resolutionNotes: record.resolution_notes || "",
+      dateReported: record.date_reported || new Date().toISOString().slice(0, 10),
+      repairDate: record.repair_date || "",
+      previousAssetStatus: record.previous_asset_status || "In Use",
+    });
+    setActiveTab("maintenance");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleSaveMaintenance(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!maintenanceForm.assetId || !maintenanceForm.issue.trim()) {
+      alert("Please select an asset and enter the issue.");
+      return;
+    }
+
+    setSavingMaintenance(true);
+
+    const isClosedStatus = maintenanceForm.status === "Completed" || maintenanceForm.status === "Cancelled";
+    const payload = {
+      asset_id: Number(maintenanceForm.assetId),
+      asset_tag: maintenanceForm.assetTag.trim() || null,
+      item_name: maintenanceForm.itemName.trim() || null,
+      issue: maintenanceForm.issue.trim(),
+      priority: maintenanceForm.priority,
+      status: maintenanceForm.status,
+      assigned_to: maintenanceForm.assignedTo.trim() || null,
+      reported_by: maintenanceForm.reportedBy.trim() || null,
+      technician: maintenanceForm.technician.trim() || null,
+      notes: maintenanceForm.notes.trim() || null,
+      action_taken: maintenanceForm.actionTaken.trim() || null,
+      resolution_notes: maintenanceForm.resolutionNotes.trim() || null,
+      date_reported: maintenanceForm.dateReported || null,
+      repair_date: maintenanceForm.repairDate || null,
+      previous_asset_status: maintenanceForm.previousAssetStatus,
+      last_status_change: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      closed_date: isClosedStatus ? new Date().toISOString() : null,
+    };
+
+    try {
+      const result = maintenanceForm.id
+        ? await supabase.from("maintenance_records").update(payload).eq("id", maintenanceForm.id)
+        : await supabase.from("maintenance_records").insert([{ ...payload, created_at: new Date().toISOString() }]);
+
+      if (result.error) throw result.error;
+
+      await syncAssetStatusForMaintenance(Number(maintenanceForm.assetId), maintenanceForm.status, maintenanceForm.previousAssetStatus);
+      resetMaintenanceForm();
+      await refreshAll(false);
+      alert(maintenanceForm.id ? "Maintenance ticket updated." : "Maintenance ticket created.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to save maintenance ticket");
+    } finally {
+      setSavingMaintenance(false);
+    }
+  }
+
+  async function updateMaintenanceStatus(record: MaintenanceRecord, status: MaintenanceStatus) {
+    try {
+      const nowIso = new Date().toISOString();
+      const updates: Record<string, string | null> = {
+        status,
+        updated_at: nowIso,
+        last_status_change: nowIso,
+      };
+
+      if (status === "Completed") {
+        const actionTaken = window.prompt(
+          `Enter action taken for ${record.asset_tag || "this asset"}`,
+          record.action_taken || ""
+        );
+        if (!actionTaken || !actionTaken.trim()) {
+          alert("Action Taken is required before completing this ticket.");
+          return;
+        }
+
+        const resolutionNotes = window.prompt(
+          `Enter resolution notes for ${record.asset_tag || "this asset"}`,
+          record.resolution_notes || ""
+        );
+        if (!resolutionNotes || !resolutionNotes.trim()) {
+          alert("Resolution Notes are required before completing this ticket.");
+          return;
+        }
+
+        updates.action_taken = actionTaken.trim();
+        updates.resolution_notes = resolutionNotes.trim();
+        updates.repair_date = record.repair_date || nowIso.slice(0, 10);
+        updates.closed_date = nowIso;
+      }
+
+      if (status === "Cancelled") {
+        updates.closed_date = nowIso;
+      }
+
+      const { error } = await supabase
+        .from("maintenance_records")
+        .update(updates)
+        .eq("id", record.id);
+
+      if (error) throw error;
+
+      await syncAssetStatusForMaintenance(record.asset_id, status, record.previous_asset_status);
+      await refreshAll(false);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to update maintenance status");
+    }
+  }
+
+  async function deleteMaintenanceRecord(id: number) {
+    const record = maintenanceRecords.find((item) => item.id === id);
+    if (!record) return;
+    if (!window.confirm("Delete this maintenance ticket?")) return;
+
+    try {
+      const { error } = await supabase.from("maintenance_records").delete().eq("id", id);
+      if (error) throw error;
+      await syncAssetStatusForMaintenance(record.asset_id, "Cancelled", record.previous_asset_status);
+      await refreshAll(false);
+      if (maintenanceForm.id === id) resetMaintenanceForm();
+      alert("Maintenance ticket deleted.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to delete maintenance ticket");
+    }
+  }
+
   function fillAssetForm(asset: ITAsset) {
     setEditingAssetId(asset.id);
     setAssetForm({
@@ -1046,10 +1422,21 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       };
       const { error } = await supabase.from("device_status_checks").insert([payload]);
       if (error) throw error;
+
+      const autoTriggered = await ensureAutoMaintenanceTicket(
+        asset,
+        safeNumber(auditForm.healthScore),
+        auditForm.remarks
+      );
+
       setAuditForm(EMPTY_AUDIT_FORM);
       await refreshAll(false);
       setActiveTab("history");
-      alert("Audit saved successfully.");
+      alert(
+        autoTriggered
+          ? "Audit saved successfully. A critical maintenance ticket was created automatically."
+          : "Audit saved successfully."
+      );
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Failed to save audit");
@@ -1443,6 +1830,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             ["inventory", "Inventory"],
             ["scan", "Scan Device"],
             ["labels", "QR Labels"],
+            ["maintenance", "Maintenance"],
             ["audit", "Quick Audit"],
             ["history", "Audit History"],
           ].map(([key, label]) => (
@@ -1525,6 +1913,352 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                     <p className="mt-1 text-sm text-emerald-800">{selectedAsset.location || "No location"} · {selectedAsset.assigned_to || "Unassigned"}</p>
                   </div>
                 ) : null}
+              </div>
+            </div>
+          </div>
+        )}
+
+
+        {activeTab === "maintenance" && (
+          <div className="mt-6 space-y-6">
+            <div className="rounded-3xl bg-white p-5 shadow-sm">
+              <SectionTitle
+                title="Maintenance / repair workflow"
+                subtitle="Create, assign, track, and close repair tickets with proper status flow and asset status syncing."
+              />
+
+              <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+                <StatCard label="Open" value={maintenanceStats.open} hint="New tickets" />
+                <StatCard label="In Progress" value={maintenanceStats.inProgress} hint="Being repaired" />
+                <StatCard label="Waiting Parts" value={maintenanceStats.waiting} hint="Blocked by parts" />
+                <StatCard label="Completed" value={maintenanceStats.completed} hint="Resolved tickets" />
+                <StatCard label="Cancelled" value={maintenanceStats.cancelled} hint="Closed without repair" />
+                <StatCard label="Critical" value={maintenanceStats.critical} hint="Urgent unresolved tickets" />
+              </div>
+
+              <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+                <div className="rounded-3xl border border-slate-200 p-5">
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {maintenanceForm.id ? "Edit maintenance ticket" : "Create maintenance ticket"}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Use Create Repair from inventory or fill this form directly to log an issue.
+                  </p>
+
+                  <form onSubmit={handleSaveMaintenance} className="mt-4 space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Asset</label>
+                        <select
+                          value={maintenanceForm.assetId}
+                          onChange={(e) => {
+                            const asset = enrichedAssets.find((item) => item.id === Number(e.target.value));
+                            setMaintenanceForm((prev) => ({
+                              ...prev,
+                              assetId: e.target.value,
+                              assetTag: asset?.asset_tag || "",
+                              itemName: asset?.item_name || "",
+                              assignedTo: prev.assignedTo || asset?.assigned_to || "",
+                              previousAssetStatus: asset?.status || prev.previousAssetStatus,
+                              priority: asset ? getMaintenancePriority(asset) : prev.priority,
+                              notes: prev.notes || asset?.recommendation || "",
+                            }));
+                          }}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        >
+                          <option value="">Select asset</option>
+                          {enrichedAssets.map((asset) => (
+                            <option key={asset.id} value={asset.id}>
+                              {asset.asset_tag} - {asset.item_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Priority</label>
+                        <select
+                          value={maintenanceForm.priority}
+                          onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, priority: e.target.value as MaintenancePriority }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        >
+                          <option>Low</option>
+                          <option>Medium</option>
+                          <option>High</option>
+                          <option>Critical</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
+                        <select
+                          value={maintenanceForm.status}
+                          onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, status: e.target.value as MaintenanceStatus }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        >
+                          <option>Open</option>
+                          <option>In Progress</option>
+                          <option>Waiting for Parts</option>
+                          <option>Completed</option>
+                          <option>Cancelled</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Date Reported</label>
+                        <input
+                          type="date"
+                          value={maintenanceForm.dateReported}
+                          onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, dateReported: e.target.value }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Issue</label>
+                      <textarea
+                        value={maintenanceForm.issue}
+                        onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, issue: e.target.value }))}
+                        rows={3}
+                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        placeholder="Describe the problem with the device"
+                      />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Reported By</label>
+                        <input
+                          value={maintenanceForm.reportedBy}
+                          onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, reportedBy: e.target.value }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Assigned To</label>
+                        <input
+                          value={maintenanceForm.assignedTo}
+                          onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, assignedTo: e.target.value }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                          placeholder="User, office, or department"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Technician</label>
+                        <input
+                          value={maintenanceForm.technician}
+                          onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, technician: e.target.value }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                          placeholder="Assigned technician"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Repair Date</label>
+                        <input
+                          type="date"
+                          value={maintenanceForm.repairDate}
+                          onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, repairDate: e.target.value }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Initial Notes</label>
+                      <textarea
+                        value={maintenanceForm.notes}
+                        onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, notes: e.target.value }))}
+                        rows={2}
+                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        placeholder="Recommendation or initial notes"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Action Taken</label>
+                      <textarea
+                        value={maintenanceForm.actionTaken}
+                        onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, actionTaken: e.target.value }))}
+                        rows={2}
+                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        placeholder="What work was carried out"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Resolution Notes</label>
+                      <textarea
+                        value={maintenanceForm.resolutionNotes}
+                        onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, resolutionNotes: e.target.value }))}
+                        rows={2}
+                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                        placeholder="Final outcome or resolution"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="submit"
+                        className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+                      >
+                        {savingMaintenance ? "Saving..." : maintenanceForm.id ? "Update Ticket" : "Create Ticket"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetMaintenanceForm}
+                        className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+                      >
+                        Clear Form
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 p-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Maintenance queue</h3>
+                      <p className="mt-1 text-sm text-slate-500">Search, filter, and move tickets through the workflow.</p>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <input
+                        value={maintenanceSearch}
+                        onChange={(e) => setMaintenanceSearch(e.target.value)}
+                        placeholder="Search asset, issue, technician..."
+                        className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                      />
+                      <select
+                        value={maintenanceStatusFilter}
+                        onChange={(e) => setMaintenanceStatusFilter(e.target.value)}
+                        className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                      >
+                        <option>All</option>
+                        <option>Open</option>
+                        <option>In Progress</option>
+                        <option>Waiting for Parts</option>
+                        <option>Completed</option>
+                        <option>Cancelled</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 space-y-3">
+                    {filteredMaintenanceRecords.length === 0 ? (
+                      <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                        No maintenance records found. Use Create Repair from the device profile or inventory table.
+                      </div>
+                    ) : (
+                      filteredMaintenanceRecords.map((record) => {
+                        const relatedAsset = record.asset_id ? maintenanceAssetsById.get(record.asset_id) : null;
+                        return (
+                          <div key={record.id} className="rounded-2xl border border-slate-200 p-4">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-900">
+                                  {record.asset_tag || "Unknown asset"} · {record.item_name || relatedAsset?.item_name || "Unknown item"}
+                                </p>
+                                <p className="mt-1 text-sm text-slate-500">
+                                  Reported by {record.reported_by || "Unknown"} · {formatDate(record.date_reported || record.created_at)}
+                                </p>
+                                <p className="mt-2 text-sm text-slate-700">{record.issue || "No issue details."}</p>
+                                <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                                  <p>Assigned to: {record.assigned_to || "Unassigned"}</p>
+                                  <p>Technician: {record.technician || "Not assigned"}</p>
+                                  <p>Repair date: {record.repair_date ? formatDate(record.repair_date) : "-"}</p>
+                                  <p>Closed: {record.closed_date ? formatDateTime(record.closed_date) : "-"}</p>
+                                </div>
+                                <div className="mt-3 space-y-1 text-sm text-slate-600">
+                                  <p><span className="font-semibold text-slate-700">Initial notes:</span> {record.notes || "-"}</p>
+                                  <p><span className="font-semibold text-slate-700">Action taken:</span> {record.action_taken || "-"}</p>
+                                  <p><span className="font-semibold text-slate-700">Resolution:</span> {record.resolution_notes || "-"}</p>
+                                </div>
+                              </div>
+
+                              <div className="flex shrink-0 flex-col gap-3 lg:items-end">
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge text={record.status || "Open"} className={statusPillClass(record.status)} />
+                                  <Badge text={record.priority || "Medium"} className={statusPillClass(record.priority)} />
+                                  {relatedAsset ? <HealthIndicator score={relatedAsset.displayScore} /> : null}
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  {record.status !== "In Progress" && record.status !== "Completed" && record.status !== "Cancelled" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateMaintenanceStatus(record, "In Progress")}
+                                      className="rounded-xl bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-700"
+                                    >
+                                      Start
+                                    </button>
+                                  ) : null}
+                                  {record.status !== "Waiting for Parts" && record.status !== "Completed" && record.status !== "Cancelled" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateMaintenanceStatus(record, "Waiting for Parts")}
+                                      className="rounded-xl bg-orange-100 px-3 py-2 text-xs font-semibold text-orange-700"
+                                    >
+                                      Waiting Parts
+                                    </button>
+                                  ) : null}
+                                  {record.status !== "Completed" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateMaintenanceStatus(record, "Completed")}
+                                      className="rounded-xl bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700"
+                                    >
+                                      Complete
+                                    </button>
+                                  ) : null}
+                                  {record.status !== "Cancelled" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateMaintenanceStatus(record, "Cancelled")}
+                                      className="rounded-xl bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
+                                    >
+                                      Cancel
+                                    </button>
+                                  ) : null}
+                                  {record.status !== "Open" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateMaintenanceStatus(record, "Open")}
+                                      className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
+                                    >
+                                      Reopen
+                                    </button>
+                                  ) : null}
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => editMaintenance(record)}
+                                    className="rounded-xl bg-cyan-100 px-3 py-2 text-xs font-semibold text-cyan-700"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteMaintenanceRecord(record.id)}
+                                    className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1649,6 +2383,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                                 </button>
                                 <button type="button" onClick={() => openAuditForAsset(asset)} className="rounded-xl bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700">
                                   Audit
+                                </button>
+                                <button type="button" onClick={() => createMaintenance(asset)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-semibold text-red-700">
+                                  Create Repair
                                 </button>
                               </div>
                             </td>
@@ -1789,6 +2526,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                     </button>
                     <button type="button" onClick={() => setActiveTab("labels")} className="rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white">
                       Open QR Label
+                    </button>
+                    <button type="button" onClick={() => createMaintenance(selectedAsset)} className="rounded-2xl bg-red-500 px-4 py-3 text-sm font-semibold text-white">
+                      Create Repair
                     </button>
                     <button type="button" onClick={() => handleDeleteAsset(selectedAsset.id)} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
                       Delete Asset
