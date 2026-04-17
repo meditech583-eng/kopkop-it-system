@@ -4,22 +4,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 
-type AssetStatus =
-  | "In Use"
-  | "In Store"
-  | "Under Repair"
-  | "Damaged"
-  | "Lost"
-  | "Retired";
-
-type AssetCondition = "Good" | "Fair" | "Damaged";
-type FinalStatus =
-  | "Operational"
-  | "Needs Minor Repair"
-  | "Needs Major Repair"
-  | "Out of Service";
-type PriorityLevel = "Low" | "Medium" | "High" | "Critical";
-
 declare global {
   interface Window {
     BarcodeDetector?: {
@@ -31,6 +15,23 @@ declare global {
   }
 }
 
+type AssetStatus =
+  | "In Use"
+  | "In Store"
+  | "Under Repair"
+  | "Damaged"
+  | "Lost"
+  | "Retired";
+
+type AssetCondition = "Good" | "Fair" | "Damaged";
+
+type FinalStatus =
+  | "Operational"
+  | "Needs Minor Repair"
+  | "Needs Major Repair"
+  | "Out of Service";
+
+type PriorityLevel = "Low" | "Medium" | "High" | "Critical";
 
 type ITAsset = {
   id: number;
@@ -49,6 +50,20 @@ type ITAsset = {
   purchase_date: string | null;
   warranty_expiry: string | null;
   notes: string | null;
+  os: string | null;
+  ram: string | null;
+  system_type: string | null;
+  connection_type: string | null;
+  ms_office: string | null;
+  monitor: string | null;
+  keyboard: string | null;
+  mouse: string | null;
+  storage: string | null;
+  online_status: string | null;
+  windows_update: string | null;
+  desktop_loading_speed: string | null;
+  booting_speed: string | null;
+  performance: string | null;
   created_at: string;
 };
 
@@ -66,36 +81,6 @@ type DeviceStatusCheck = {
   department: string | null;
   office_area: string | null;
   assigned_role: string | null;
-
-  monitor_ok: boolean;
-  keyboard_ok: boolean;
-  mouse_ok: boolean;
-  cpu_ok: boolean;
-  ports_ok: boolean;
-  cables_ok: boolean;
-  cleanliness_ok: boolean;
-
-  power_on_ok: boolean;
-  boot_ok: boolean;
-  noise_ok: boolean;
-  overheating_ok: boolean;
-  performance_ok: boolean;
-
-  os_ok: boolean;
-  windows_activated_ok: boolean;
-  windows_updated_ok: boolean;
-  antivirus_installed_ok: boolean;
-  antivirus_updated_ok: boolean;
-  virus_free_ok: boolean;
-
-  office_installed_ok: boolean;
-  office_activated_ok: boolean;
-  browser_ok: boolean;
-  pdf_reader_ok: boolean;
-
-  internet_ok: boolean;
-  lan_ok: boolean;
-
   issue_detected: boolean | null;
   priority_level: PriorityLevel | null;
   final_status: FinalStatus;
@@ -120,9 +105,23 @@ type AssetFormState = {
   purchaseDate: string;
   warrantyExpiry: string;
   notes: string;
+  os: string;
+  ram: string;
+  systemType: string;
+  connectionType: string;
+  msOffice: string;
+  monitor: string;
+  keyboard: string;
+  mouse: string;
+  storage: string;
+  onlineStatus: string;
+  windowsUpdate: string;
+  desktopLoadingSpeed: string;
+  bootingSpeed: string;
+  performance: string;
 };
 
-type DeviceCheckFormState = {
+type AuditFormState = {
   assetId: string;
   inspectedBy: string;
   inspectionDate: string;
@@ -130,140 +129,19 @@ type DeviceCheckFormState = {
   department: string;
   officeArea: string;
   assignedRole: string;
-
-  monitorOk: boolean;
-  keyboardOk: boolean;
-  mouseOk: boolean;
-  cpuOk: boolean;
-  portsOk: boolean;
-  cablesOk: boolean;
-  cleanlinessOk: boolean;
-
-  powerOnOk: boolean;
-  bootOk: boolean;
-  noiseOk: boolean;
-  overheatingOk: boolean;
-  performanceOk: boolean;
-
-  osOk: boolean;
-  windowsActivatedOk: boolean;
-  windowsUpdatedOk: boolean;
-  antivirusInstalledOk: boolean;
-  antivirusUpdatedOk: boolean;
-  virusFreeOk: boolean;
-
-  officeInstalledOk: boolean;
-  officeActivatedOk: boolean;
-  browserOk: boolean;
-  pdfReaderOk: boolean;
-
-  internetOk: boolean;
-  lanOk: boolean;
-
-  issueDetected: boolean;
   priorityLevel: PriorityLevel;
+  finalStatus: FinalStatus;
+  healthScore: string;
+  issueDetected: boolean;
   remarks: string;
 };
 
-const DIVISIONS = [
-  "KOPKOP College Admin Team",
-  "Primary School",
-  "Secondary School",
-  "SOLI (School of Learning & Innovation)",
-] as const;
-
-const DEPARTMENTS_BY_DIVISION: Record<string, string[]> = {
-  "KOPKOP College Admin Team": [
-    "Admin Office",
-    "IT Department",
-    "Finance Department",
-    "Resource Department",
-    "HR Department",
-  ],
-  "Primary School": [
-    "Senior School",
-    "Middle School",
-    "Junior School",
-    "ECCE",
-    "Primary Staff Room",
-    "Primary IT Lab",
-  ],
-  "Secondary School": ["Academic", "LSS School", "Secondary Staff Room"],
-  "SOLI (School of Learning & Innovation)": ["Grade 11", "Grade 12"],
-};
-
-const OFFICES_BY_DEPARTMENT: Record<string, string[]> = {
-  "Admin Office": [
-    "Admin Front Desk",
-    "Admin Main Office",
-    "Enrollment Desk - Secondary",
-    "Enrollment Desk - Primary",
-    "ARO Desk 2",
-    "ARO Desk 3",
-    "Transport Desk",
-    "Printing Desk 1",
-    "Printing Desk 2",
-  ],
-  "IT Department": ["IT Office", "IT Manager Desk", "IT Officer Desk"],
-  "Finance Department": [
-    "Finance Office",
-    "Accounts Payable Desk",
-    "Finance Manager Desk",
-    "Accounts Receivable Desk 1",
-    "Admin Office - Receivables Desk 2",
-    "Admin Office - Receivables Desk 3",
-  ],
-  "Resource Department": [
-    "Resource Office",
-    "Resource Officer Desk 1",
-    "Resource Officer Desk 2",
-  ],
-  "HR Department": ["HR Office", "HR Manager Desk", "HR Assistant Desk 1", "HR Assistant Desk 2"],
-  "Senior School": ["Senior School Area"],
-  "Middle School": ["Middle School Area"],
-  "Junior School": ["Junior School Area"],
-  "ECCE": ["ECCE Area"],
-  "Primary Staff Room": ["Primary Staff Room"],
-  "Primary IT Lab": ["Primary IT Lab"],
-  "Academic": ["Academic Office"],
-  "LSS School": ["LSS Staff Room"],
-  "Secondary Staff Room": ["Secondary Staff Room"],
-  "Grade 11": ["Grade 11 Classroom", "Grade 11 Lab"],
-  "Grade 12": ["Grade 12 Classroom", "Grade 12 Lab"],
-};
-
-const ROLES_BY_DEPARTMENT: Record<string, string[]> = {
-  "Admin Office": [
-    "Enrollment Officer - Secondary",
-    "Enrollment Officer - Primary",
-    "ARO 2",
-    "ARO 3",
-    "Transport Officer",
-    "Printing Officer 1",
-    "Printing Officer 2",
-    "Front Desk Officer",
-  ],
-  "IT Department": ["IT Manager", "IT Officer"],
-  "Finance Department": [
-    "Accounts Receivable 1",
-    "Accounts Receivable 2",
-    "Accounts Receivable 3",
-    "Accounts Payable",
-    "Finance Manager",
-  ],
-  "Resource Department": ["Resource Officer 1", "Resource Officer 2"],
-  "HR Department": ["HR Manager", "HR Assistant 1", "HR Assistant 2"],
-  "Primary Staff Room": ["Teacher Workstation"],
-  "Primary IT Lab": ["Shared Lab PC"],
-  "Academic": ["Principal", "Deputy Principal"],
-  "LSS School": ["Teacher Workstation"],
-  "Secondary Staff Room": ["Teacher Workstation"],
-  "Grade 11": ["Shared Classroom PC", "Shared Lab PC"],
-  "Grade 12": ["Shared Classroom PC", "Shared Lab PC"],
-  "Senior School": ["Teacher Workstation"],
-  "Middle School": ["Teacher Workstation"],
-  "Junior School": ["Teacher Workstation"],
-  "ECCE": ["Teacher Workstation"],
+type EnrichedAsset = ITAsset & {
+  lastAudit: DeviceStatusCheck | null;
+  displayScore: number;
+  recommendation: string;
+  alerts: string[];
+  healthLabel: "Healthy" | "Watch" | "Needs Upgrade" | "Critical";
 };
 
 const EMPTY_ASSET_FORM: AssetFormState = {
@@ -282,9 +160,23 @@ const EMPTY_ASSET_FORM: AssetFormState = {
   purchaseDate: "",
   warrantyExpiry: "",
   notes: "",
+  os: "",
+  ram: "",
+  systemType: "",
+  connectionType: "",
+  msOffice: "",
+  monitor: "",
+  keyboard: "",
+  mouse: "",
+  storage: "",
+  onlineStatus: "",
+  windowsUpdate: "",
+  desktopLoadingSpeed: "",
+  bootingSpeed: "",
+  performance: "",
 };
 
-const EMPTY_DEVICE_CHECK_FORM: DeviceCheckFormState = {
+const EMPTY_AUDIT_FORM: AuditFormState = {
   assetId: "",
   inspectedBy: "",
   inspectionDate: new Date().toISOString().slice(0, 10),
@@ -292,122 +184,26 @@ const EMPTY_DEVICE_CHECK_FORM: DeviceCheckFormState = {
   department: "",
   officeArea: "",
   assignedRole: "",
-
-  monitorOk: false,
-  keyboardOk: false,
-  mouseOk: false,
-  cpuOk: false,
-  portsOk: false,
-  cablesOk: false,
-  cleanlinessOk: false,
-
-  powerOnOk: false,
-  bootOk: false,
-  noiseOk: false,
-  overheatingOk: false,
-  performanceOk: false,
-
-  osOk: false,
-  windowsActivatedOk: false,
-  windowsUpdatedOk: false,
-  antivirusInstalledOk: false,
-  antivirusUpdatedOk: false,
-  virusFreeOk: false,
-
-  officeInstalledOk: false,
-  officeActivatedOk: false,
-  browserOk: false,
-  pdfReaderOk: false,
-
-  internetOk: false,
-  lanOk: false,
-
-  issueDetected: false,
   priorityLevel: "Low",
+  finalStatus: "Operational",
+  healthScore: "100",
+  issueDetected: false,
   remarks: "",
 };
 
-const CHECK_GROUPS: Array<{
-  title: string;
-  items: Array<{ key: keyof DeviceCheckFormState; label: string }>;
-}> = [
-  {
-    title: "Hardware",
-    items: [
-      { key: "monitorOk", label: "Monitor OK" },
-      { key: "keyboardOk", label: "Keyboard OK" },
-      { key: "mouseOk", label: "Mouse OK" },
-      { key: "cpuOk", label: "CPU / System Unit OK" },
-      { key: "portsOk", label: "Ports OK" },
-      { key: "cablesOk", label: "Cables OK" },
-      { key: "cleanlinessOk", label: "Cleanliness OK" },
-    ],
-  },
-  {
-    title: "System Health",
-    items: [
-      { key: "powerOnOk", label: "Power ON" },
-      { key: "bootOk", label: "Boot Time Normal" },
-      { key: "noiseOk", label: "No Strange Noise" },
-      { key: "overheatingOk", label: "No Overheating" },
-      { key: "performanceOk", label: "Performance OK" },
-    ],
-  },
-  {
-    title: "Software & Security",
-    items: [
-      { key: "osOk", label: "Operating System OK" },
-      { key: "windowsActivatedOk", label: "Windows Activated" },
-      { key: "windowsUpdatedOk", label: "Windows Updated" },
-      { key: "antivirusInstalledOk", label: "Antivirus Installed" },
-      { key: "antivirusUpdatedOk", label: "Antivirus Updated" },
-      { key: "virusFreeOk", label: "No Virus Detected" },
-    ],
-  },
-  {
-    title: "Applications",
-    items: [
-      { key: "officeInstalledOk", label: "MS Office Installed" },
-      { key: "officeActivatedOk", label: "MS Office Activated" },
-      { key: "browserOk", label: "Browser Working" },
-      { key: "pdfReaderOk", label: "PDF Reader Installed" },
-    ],
-  },
-  {
-    title: "Network",
-    items: [
-      { key: "internetOk", label: "Internet OK" },
-      { key: "lanOk", label: "LAN Port Working" },
-    ],
-  },
-];
+const DIVISIONS = [
+  "KOPKOP College Admin Team",
+  "Primary School",
+  "Secondary School",
+  "SOLI (School of Learning & Innovation)",
+] as const;
 
-const CHECK_KEYS: Array<keyof DeviceCheckFormState> = [
-  "monitorOk",
-  "keyboardOk",
-  "mouseOk",
-  "cpuOk",
-  "portsOk",
-  "cablesOk",
-  "cleanlinessOk",
-  "powerOnOk",
-  "bootOk",
-  "noiseOk",
-  "overheatingOk",
-  "performanceOk",
-  "osOk",
-  "windowsActivatedOk",
-  "windowsUpdatedOk",
-  "antivirusInstalledOk",
-  "antivirusUpdatedOk",
-  "virusFreeOk",
-  "officeInstalledOk",
-  "officeActivatedOk",
-  "browserOk",
-  "pdfReaderOk",
-  "internetOk",
-  "lanOk",
-];
+const DEPARTMENTS_BY_DIVISION: Record<string, string[]> = {
+  "KOPKOP College Admin Team": ["Admin Office", "IT Department", "Finance Department", "HR Department"],
+  "Primary School": ["Senior School", "Middle School", "Junior School", "ECCE", "Primary Staff Room", "Primary IT Lab"],
+  "Secondary School": ["Academic", "LSS School", "Secondary Staff Room", "Secondary IT Lab"],
+  "SOLI (School of Learning & Innovation)": ["Grade 11", "Grade 12"],
+};
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -419,50 +215,38 @@ function formatDateTime(value?: string | null) {
   return new Date(value).toLocaleString();
 }
 
-function statusBadge(status: string) {
-  switch (status) {
-    case "Operational":
+function safeNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function statusPillClass(status?: string | null) {
+  switch ((status || "").toLowerCase()) {
+    case "in use":
+    case "operational":
+    case "updated":
+    case "online":
+    case "good":
+    case "healthy":
       return "bg-emerald-100 text-emerald-700";
-    case "Needs Minor Repair":
+    case "in store":
+      return "bg-slate-100 text-slate-700";
+    case "under repair":
+    case "needs minor repair":
+    case "slow":
+    case "watch":
       return "bg-amber-100 text-amber-700";
-    case "Needs Major Repair":
+    case "needs major repair":
+    case "out of service":
+    case "damaged":
+    case "not updated":
+    case "offline":
+    case "poor":
+    case "critical":
+      return "bg-red-100 text-red-700";
+    case "fair":
+    case "needs upgrade":
       return "bg-orange-100 text-orange-700";
-    case "Out of Service":
-      return "bg-red-100 text-red-700";
-    default:
-      return "bg-slate-100 text-slate-700";
-  }
-}
-
-function priorityBadge(priority: string) {
-  switch (priority) {
-    case "Low":
-      return "bg-slate-100 text-slate-700";
-    case "Medium":
-      return "bg-blue-100 text-blue-700";
-    case "High":
-      return "bg-amber-100 text-amber-700";
-    case "Critical":
-      return "bg-red-100 text-red-700";
-    default:
-      return "bg-slate-100 text-slate-700";
-  }
-}
-
-function assetStatusBadge(status: string) {
-  switch (status) {
-    case "In Use":
-      return "bg-emerald-100 text-emerald-700";
-    case "In Store":
-      return "bg-slate-100 text-slate-700";
-    case "Under Repair":
-      return "bg-amber-100 text-amber-700";
-    case "Damaged":
-      return "bg-red-100 text-red-700";
-    case "Lost":
-      return "bg-rose-100 text-rose-700";
-    case "Retired":
-      return "bg-zinc-200 text-zinc-700";
     default:
       return "bg-slate-100 text-slate-700";
   }
@@ -475,27 +259,79 @@ function scoreTone(score: number) {
   return "text-red-700 bg-red-50";
 }
 
-function calculateHealthScore(form: DeviceCheckFormState) {
-  const passed = CHECK_KEYS.filter((key) => Boolean(form[key])).length;
-  return Math.round((passed / CHECK_KEYS.length) * 100);
+function inferHealthScore(asset: ITAsset) {
+  let score = 100;
+  const performance = (asset.performance || "").toLowerCase();
+  const boot = (asset.booting_speed || "").toLowerCase();
+  const desktopLoad = (asset.desktop_loading_speed || "").toLowerCase();
+  const update = (asset.windows_update || "").toLowerCase();
+  const online = (asset.online_status || "").toLowerCase();
+  const condition = (asset.condition || "").toLowerCase();
+
+  if (performance.includes("poor") || performance.includes("bad")) score -= 35;
+  else if (performance.includes("fair") || performance.includes("average")) score -= 15;
+
+  if (boot.includes("slow")) score -= 20;
+  if (desktopLoad.includes("slow")) score -= 15;
+  if (update.includes("not") || update.includes("pending")) score -= 15;
+  if (online.includes("offline")) score -= 10;
+  if (condition === "damaged") score -= 30;
+  if (condition === "fair") score -= 10;
+
+  return Math.max(0, Math.min(100, score));
 }
 
-function calculateAutoStatus(
-  score: number,
-  issueDetected: boolean,
-  priorityLevel: PriorityLevel
-): FinalStatus {
-  if (issueDetected && priorityLevel === "Critical") return "Out of Service";
-  if (issueDetected && priorityLevel === "High" && score < 70) return "Needs Major Repair";
-  if (score >= 90) return "Operational";
-  if (score >= 70) return "Needs Minor Repair";
-  if (score >= 40) return "Needs Major Repair";
-  return "Out of Service";
+function getHealthLabel(score: number): EnrichedAsset["healthLabel"] {
+  if (score >= 85) return "Healthy";
+  if (score >= 65) return "Watch";
+  if (score >= 40) return "Needs Upgrade";
+  return "Critical";
 }
 
-function StatCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
+function getHealthAlerts(asset: ITAsset) {
+  const alerts: string[] = [];
+  const ram = (asset.ram || "").toLowerCase();
+  const storage = (asset.storage || "").toLowerCase();
+  const performance = (asset.performance || "").toLowerCase();
+  const boot = (asset.booting_speed || "").toLowerCase();
+  const desktopLoad = (asset.desktop_loading_speed || "").toLowerCase();
+  const update = (asset.windows_update || "").toLowerCase();
+  const online = (asset.online_status || "").toLowerCase();
+  const condition = (asset.condition || "").toLowerCase();
+
+  if (ram.includes("2gb") || ram.includes("4gb")) alerts.push("Low RAM");
+  if (storage.includes("hdd") && !storage.includes("ssd")) alerts.push("HDD upgrade");
+  if (performance.includes("poor") || performance.includes("bad")) alerts.push("Poor performance");
+  if (boot.includes("slow")) alerts.push("Slow boot");
+  if (desktopLoad.includes("slow")) alerts.push("Slow desktop load");
+  if (update.includes("not") || update.includes("pending")) alerts.push("Windows update needed");
+  if (online.includes("offline")) alerts.push("Offline");
+  if (condition === "damaged") alerts.push("Physical condition issue");
+
+  return alerts;
+}
+
+function inferRecommendation(asset: ITAsset, score: number) {
+  const ram = (asset.ram || "").toLowerCase();
+  const storage = (asset.storage || "").toLowerCase();
+
+  if (score < 40) return "Urgent IT attention required";
+  if (score < 65) return "Plan upgrade or repair soon";
+  if (ram.includes("2gb") || ram.includes("4gb")) return "RAM upgrade recommended";
+  if (storage.includes("hdd") && !storage.includes("ssd")) return "SSD upgrade recommended";
+  return "Device looks acceptable";
+}
+
+function computeAssetHealth(asset: ITAsset, audit?: DeviceStatusCheck | null) {
+  const score = audit?.health_score ?? inferHealthScore(asset);
+  const label = getHealthLabel(score);
+  const alerts = getHealthAlerts(asset);
+  return { score, label, alerts };
+}
+
+function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
-    <div className="rounded-3xl bg-white p-5 shadow-sm">
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
       {hint ? <p className="mt-2 text-xs text-slate-500">{hint}</p> : null}
@@ -503,192 +339,103 @@ function StatCard({ label, value, hint }: { label: string; value: number; hint?:
   );
 }
 
-function DetailPill({ ok, label }: { ok: boolean; label: string }) {
+function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-        ok ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-      }`}
-    >
-      {label}: {ok ? "OK" : "Issue"}
+    <div className="mb-5">
+      <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+      <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+    </div>
+  );
+}
+
+function Badge({ text, className }: { text: string; className?: string }) {
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${className || "bg-slate-100 text-slate-700"}`}>
+      {text}
     </span>
   );
 }
 
-
-function MobileQuickButton({
+function MiniBar({
   label,
-  active,
-  onClick,
+  value,
+  max,
+  tone = "slate",
 }: {
   label: string;
-  active: boolean;
-  onClick: () => void;
+  value: number;
+  max: number;
+  tone?: "emerald" | "amber" | "orange" | "red" | "blue" | "slate";
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-2xl px-4 py-3 text-sm font-semibold ${
-        active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
+  const width = max > 0 ? Math.max(8, Math.round((value / max) * 100)) : 0;
+  const toneMap: Record<string, string> = {
+    emerald: "bg-emerald-500",
+    amber: "bg-amber-500",
+    orange: "bg-orange-500",
+    red: "bg-red-500",
+    blue: "bg-blue-500",
+    slate: "bg-slate-700",
+  };
 
-
-function SectionToggle({
-  title,
-  count,
-  isOpen,
-  onClick,
-}: {
-  title: string;
-  count: number;
-  isOpen: boolean;
-  onClick: () => void;
-}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-left"
-    >
-      <div className="flex items-center gap-3">
-        <span className="text-base font-bold text-slate-900">{title}</span>
-        <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
-          {count}
-        </span>
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="truncate text-slate-700">{label}</span>
+        <span className="font-semibold text-slate-900">{value}</span>
       </div>
-      <span className="text-sm font-semibold text-slate-600">{isOpen ? "Hide" : "Show"}</span>
-    </button>
+      <div className="h-2.5 rounded-full bg-slate-100">
+        <div className={`h-2.5 rounded-full ${toneMap[tone]}`} style={{ width: `${width}%` }} />
+      </div>
+    </div>
   );
 }
 
-
-function QRCodeCard({ value, label, subtitle }: { value: string; label: string; subtitle?: string }) {
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(value)}`;
-
-  async function handleDownloadQr() {
-    try {
-      const response = await fetch(qrUrl);
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = blobUrl;
-      link.download = `${label.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_qr.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
-    } catch {
-      window.open(qrUrl, "_blank");
-    }
-  }
-
-  function handlePrintQr() {
-    const printWindow = window.open("", "_blank", "width=500,height=700");
-    if (!printWindow) return;
-
-    const html = `
-      <html>
-        <head>
-          <title>${label} QR Label</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 24px;
-              text-align: center;
-              color: #111827;
-            }
-            .label {
-              border: 2px solid #cbd5e1;
-              border-radius: 18px;
-              padding: 24px;
-              width: 320px;
-              margin: 0 auto;
-            }
-            .title {
-              font-size: 22px;
-              font-weight: 700;
-              margin-bottom: 8px;
-            }
-            .subtitle {
-              font-size: 14px;
-              color: #475569;
-              margin-bottom: 12px;
-            }
-            .qr {
-              width: 260px;
-              height: 260px;
-              object-fit: contain;
-              margin: 12px auto;
-              display: block;
-              border: 1px solid #e2e8f0;
-              padding: 8px;
-              background: white;
-            }
-            .value {
-              font-size: 18px;
-              font-weight: 700;
-              margin-top: 14px;
-            }
-            .meta {
-              font-size: 12px;
-              color: #64748b;
-              margin-top: 6px;
-              word-break: break-word;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="label">
-            <div class="title">${label}</div>
-            ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ""}
-            <img class="qr" src="${qrUrl}" alt="QR Code" />
-            <div class="value">${value}</div>
-            <div class="meta">KOPKOP College ICT Asset Audit & Compliance System</div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-  }
+function DonutRing({
+  value,
+  total,
+  label,
+  tone = "emerald",
+}: {
+  value: number;
+  total: number;
+  label: string;
+  tone?: "emerald" | "amber" | "orange" | "red" | "blue";
+}) {
+  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
+  const toneMap: Record<string, string> = {
+    emerald: "#10b981",
+    amber: "#f59e0b",
+    orange: "#f97316",
+    red: "#ef4444",
+    blue: "#3b82f6",
+  };
+  const background = `conic-gradient(${toneMap[tone]} 0 ${percent}%, #e2e8f0 ${percent}% 100%)`;
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col items-center text-center">
-        <img
-          src={qrUrl}
-          alt={`QR code for ${label}`}
-          className="h-56 w-56 rounded-2xl border border-slate-200 bg-white p-2"
-        />
-        <h3 className="mt-4 text-lg font-bold text-slate-900">{label}</h3>
-        {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
-        <p className="mt-1 text-sm text-slate-500">QR value: {value}</p>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          <button
-            type="button"
-            onClick={handleDownloadQr}
-            className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-          >
-            Download QR
-          </button>
-          <button
-            type="button"
-            onClick={handlePrintQr}
-            className="rounded-2xl bg-cyan-700 px-4 py-2 text-sm font-semibold text-white"
-          >
-            Print QR
-          </button>
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-4">
+        <div className="grid h-20 w-20 place-items-center rounded-full" style={{ background }}>
+          <div className="grid h-12 w-12 place-items-center rounded-full bg-white text-sm font-bold text-slate-900">
+            {percent}%
+          </div>
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{label}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>
+          <p className="text-xs text-slate-500">out of {total} devices</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function HealthIndicator({ score }: { score: number }) {
+  const label = getHealthLabel(score);
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${statusPillClass(label)}`}>
+      <span className="h-2.5 w-2.5 rounded-full bg-current opacity-70" />
+      <span>{label}</span>
+      <span className="opacity-80">{score}%</span>
     </div>
   );
 }
@@ -696,79 +443,32 @@ function QRCodeCard({ value, label, subtitle }: { value: string; label: string; 
 export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [assets, setAssets] = useState<ITAsset[]>([]);
   const [deviceChecks, setDeviceChecks] = useState<DeviceStatusCheck[]>([]);
-  const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
-  const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
-  const [deviceCheckForm, setDeviceCheckForm] = useState<DeviceCheckFormState>(EMPTY_DEVICE_CHECK_FORM);
-
   const [loading, setLoading] = useState(true);
-  const [savingAsset, setSavingAsset] = useState(false);
-  const [savingDeviceCheck, setSavingDeviceCheck] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-  const [liveMessage, setLiveMessage] = useState("Live updates active");
+  const [savingAsset, setSavingAsset] = useState(false);
+  const [savingAudit, setSavingAudit] = useState(false);
+  const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
+  const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
+  const [auditForm, setAuditForm] = useState<AuditFormState>(EMPTY_AUDIT_FORM);
 
   const [search, setSearch] = useState("");
-  const [divisionFilter, setDivisionFilter] = useState("All");
-  const [departmentFilter, setDepartmentFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [priorityFilter, setPriorityFilter] = useState("All");
-  const [dateFilter, setDateFilter] = useState("");
-  const [assetTypeFilter, setAssetTypeFilter] = useState("All");
-  const [selectedCheckId, setSelectedCheckId] = useState<number | null>(null);
-  const [openSection, setOpenSection] = useState<"inventory" | "pending" | "audit">("inventory");
-  const [quickAuditMode, setQuickAuditMode] = useState(false);
-  const [qrAssetId, setQrAssetId] = useState<number | null>(null);
-  const [scannerOpen, setScannerOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [performanceFilter, setPerformanceFilter] = useState("All");
+  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "scan" | "audit" | "history">("dashboard");
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
   const [scannerSupported, setScannerSupported] = useState(false);
-  const [scannerStatus, setScannerStatus] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerStatus, setScannerStatus] = useState("Ready to scan asset tags or serial numbers.");
   const [manualScanCode, setManualScanCode] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const scanLoopRef = useRef<number | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const refreshInFlightRef = useRef(false);
-  const liveMessageTimerRef = useRef<number | null>(null);
+  const scanLoopRef = useRef<number | null>(null);
 
   useEffect(() => {
-    refreshAll({ silent: false, showRefreshing: false });
-
-    const channel = supabase
-      .channel("kopkop-live-updates")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "it_assets" },
-        () => {
-          setLiveUpdateMessage("Inventory updated just now");
-          refreshAll({ silent: true, showRefreshing: false });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "device_status_checks" },
-        () => {
-          setLiveUpdateMessage("Audit records updated just now");
-          refreshAll({ silent: true, showRefreshing: false });
-        }
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          setLiveUpdateMessage("Live updates connected");
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setLiveUpdateMessage("Live connection issue. Auto-sync still running.");
-        }
-      });
-
-    const intervalId = window.setInterval(() => {
-      refreshAll({ silent: true, showRefreshing: false });
-    }, 30000);
-
-    return () => {
-      window.clearInterval(intervalId);
-      if (liveMessageTimerRef.current) {
-        window.clearTimeout(liveMessageTimerRef.current);
-        liveMessageTimerRef.current = null;
-      }
-      supabase.removeChannel(channel);
-    };
+    refreshAll(false);
   }, []);
 
   useEffect(() => {
@@ -776,270 +476,189 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     return () => {
       stopScanner();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function setLiveUpdateMessage(message: string) {
-    setLiveMessage(message);
-    if (liveMessageTimerRef.current) {
-      window.clearTimeout(liveMessageTimerRef.current);
-    }
-    liveMessageTimerRef.current = window.setTimeout(() => {
-      setLiveMessage("Live updates active");
-      liveMessageTimerRef.current = null;
-    }, 4000);
-  }
-
-  async function loadAssets(options?: { silent?: boolean }) {
-    const { data, error } = await supabase
-      .from("it_assets")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      if (!options?.silent) alert(error.message);
-      throw error;
-    }
+  async function loadAssets() {
+    const { data, error } = await supabase.from("it_assets").select("*").order("asset_tag", { ascending: true });
+    if (error) throw error;
     setAssets((data || []) as ITAsset[]);
   }
 
-  async function loadDeviceChecks(options?: { silent?: boolean }) {
+  async function loadDeviceChecks() {
     const { data, error } = await supabase
       .from("device_status_checks")
       .select("*")
       .order("created_at", { ascending: false });
-
-    if (error) {
-      if (!options?.silent) alert(error.message);
-      throw error;
-    }
+    if (error) throw error;
     setDeviceChecks((data || []) as DeviceStatusCheck[]);
   }
 
-  async function refreshAll(options?: { silent?: boolean; showRefreshing?: boolean }) {
-    const silent = options?.silent ?? false;
-    const showRefreshing = options?.showRefreshing ?? false;
-
-    if (refreshInFlightRef.current) return;
-    refreshInFlightRef.current = true;
-
-    if (!silent) setLoading(true);
-    if (showRefreshing) setRefreshing(true);
-
+  async function refreshAll(showBusy = true) {
     try {
-      await Promise.all([loadAssets({ silent }), loadDeviceChecks({ silent })]);
-      setLastSyncedAt(new Date().toLocaleTimeString());
-      if (!silent) {
-        setLiveUpdateMessage("Data synced successfully");
-      }
+      if (showBusy) setRefreshing(true);
+      setLoading(true);
+      await Promise.all([loadAssets(), loadDeviceChecks()]);
+      setLastSyncedAt(new Date().toLocaleString());
     } catch (error) {
-      console.error("Refresh failed", error);
-      if (silent) {
-        setLiveMessage("Auto-sync retrying...");
-      }
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to load data");
     } finally {
       setLoading(false);
       setRefreshing(false);
-      refreshInFlightRef.current = false;
     }
   }
-
-  const liveScore = useMemo(() => calculateHealthScore(deviceCheckForm), [deviceCheckForm]);
-  const autoStatus = useMemo(
-    () => calculateAutoStatus(liveScore, deviceCheckForm.issueDetected, deviceCheckForm.priorityLevel),
-    [liveScore, deviceCheckForm.issueDetected, deviceCheckForm.priorityLevel]
-  );
-
-  const departmentOptionsForForm = useMemo(
-    () => DEPARTMENTS_BY_DIVISION[deviceCheckForm.division] || [],
-    [deviceCheckForm.division]
-  );
-
-  const officeOptionsForForm = useMemo(
-    () => OFFICES_BY_DEPARTMENT[deviceCheckForm.department] || [],
-    [deviceCheckForm.department]
-  );
-
-  const roleOptionsForForm = useMemo(
-    () => ROLES_BY_DEPARTMENT[deviceCheckForm.department] || [],
-    [deviceCheckForm.department]
-  );
-
-  const auditableAssets = useMemo(() => {
-    return [...assets].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag));
-  }, [assets]);
-
-  const desktopAssets = useMemo(() => {
-    return assets.filter((asset) => {
-      const haystack = `${asset.category || ""} ${asset.item_name || ""} ${asset.asset_tag || ""}`.toLowerCase();
-      return haystack.includes("desktop") || haystack.includes("cpu") || haystack.includes("pc");
-    });
-  }, [assets]);
 
   const latestAuditByAssetId = useMemo(() => {
     const map = new Map<number, DeviceStatusCheck>();
     for (const check of deviceChecks) {
-      if (!check.asset_id) continue;
-      const existing = map.get(check.asset_id);
-      if (!existing) map.set(check.asset_id, check);
+      if (check.asset_id && !map.has(check.asset_id)) map.set(check.asset_id, check);
     }
     return map;
   }, [deviceChecks]);
 
-  const pendingAuditAssets = useMemo(() => {
-    return auditableAssets.filter((asset) => !latestAuditByAssetId.has(asset.id));
-  }, [auditableAssets, latestAuditByAssetId]);
-
-  const filteredInventoryAssets = useMemo(() => {
-    return auditableAssets.filter((asset) => {
-      if (assetTypeFilter === "All") return true;
-      const category = (asset.category || "").toLowerCase();
-      const item = (asset.item_name || "").toLowerCase();
-      const haystack = `${category} ${item}`;
-
-      if (assetTypeFilter === "Desktop") {
-        return haystack.includes("desktop") || haystack.includes("cpu") || haystack.includes("pc");
-      }
-      if (assetTypeFilter === "Laptop") {
-        return haystack.includes("laptop") || haystack.includes("notebook");
-      }
-      if (assetTypeFilter === "Printer") {
-        return haystack.includes("printer");
-      }
-      return category.includes(assetTypeFilter.toLowerCase()) || item.includes(assetTypeFilter.toLowerCase());
+  const enrichedAssets = useMemo<EnrichedAsset[]>(() => {
+    return assets.map((asset) => {
+      const lastAudit = latestAuditByAssetId.get(asset.id) || null;
+      const displayScore = lastAudit?.health_score ?? inferHealthScore(asset);
+      const alerts = getHealthAlerts(asset);
+      return {
+        ...asset,
+        lastAudit,
+        displayScore,
+        alerts,
+        healthLabel: getHealthLabel(displayScore),
+        recommendation: inferRecommendation(asset, displayScore),
+      };
     });
-  }, [auditableAssets, assetTypeFilter]);
+  }, [assets, latestAuditByAssetId]);
 
-  const filteredPendingAssets = useMemo(() => {
-    return pendingAuditAssets.filter((asset) => {
-      if (assetTypeFilter === "All") return true;
-      const category = (asset.category || "").toLowerCase();
-      const item = (asset.item_name || "").toLowerCase();
-      const haystack = `${category} ${item}`;
-
-      if (assetTypeFilter === "Desktop") {
-        return haystack.includes("desktop") || haystack.includes("cpu") || haystack.includes("pc");
-      }
-      if (assetTypeFilter === "Laptop") {
-        return haystack.includes("laptop") || haystack.includes("notebook");
-      }
-      if (assetTypeFilter === "Printer") {
-        return haystack.includes("printer");
-      }
-      return category.includes(assetTypeFilter.toLowerCase()) || item.includes(assetTypeFilter.toLowerCase());
-    });
-  }, [pendingAuditAssets, assetTypeFilter]);
-
-  const filteredChecks = useMemo(() => {
-    return deviceChecks.filter((check) => {
-      const term = search.toLowerCase().trim();
+  const filteredAssets = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return enrichedAssets.filter((asset) => {
       const matchesSearch =
         !term ||
-        (check.asset_tag || "").toLowerCase().includes(term) ||
-        (check.item_name || "").toLowerCase().includes(term) ||
-        (check.inspected_by || "").toLowerCase().includes(term) ||
-        (check.division || "").toLowerCase().includes(term) ||
-        (check.department || "").toLowerCase().includes(term) ||
-        (check.office_area || "").toLowerCase().includes(term) ||
-        (check.assigned_role || "").toLowerCase().includes(term) ||
-        (check.remarks || "").toLowerCase().includes(term);
+        asset.asset_tag.toLowerCase().includes(term) ||
+        asset.item_name.toLowerCase().includes(term) ||
+        (asset.brand || "").toLowerCase().includes(term) ||
+        (asset.model || "").toLowerCase().includes(term) ||
+        (asset.assigned_to || "").toLowerCase().includes(term) ||
+        (asset.location || "").toLowerCase().includes(term) ||
+        (asset.serial_number || "").toLowerCase().includes(term);
 
-      const matchesDivision = divisionFilter === "All" || (check.division || "") === divisionFilter;
-      const matchesDepartment = departmentFilter === "All" || (check.department || "") === departmentFilter;
-      const matchesStatus = statusFilter === "All" || check.final_status === statusFilter;
-      const matchesPriority = priorityFilter === "All" || (check.priority_level || "") === priorityFilter;
-      const matchesDate = !dateFilter || check.inspection_date === dateFilter;
+      const matchesStatus = statusFilter === "All" || (asset.status || "") === statusFilter;
+      const matchesCategory = categoryFilter === "All" || (asset.category || "") === categoryFilter;
+      const matchesPerformance =
+        performanceFilter === "All" ||
+        (asset.performance || "").toLowerCase() === performanceFilter.toLowerCase();
 
-      return matchesSearch && matchesDivision && matchesDepartment && matchesStatus && matchesPriority && matchesDate;
+      return matchesSearch && matchesStatus && matchesCategory && matchesPerformance;
     });
-  }, [deviceChecks, search, divisionFilter, departmentFilter, statusFilter, priorityFilter, dateFilter]);
+  }, [enrichedAssets, search, statusFilter, categoryFilter, performanceFilter]);
 
-  const selectedCheck = useMemo(
-    () => filteredChecks.find((check) => check.id === selectedCheckId) || null,
-    [filteredChecks, selectedCheckId]
+  const selectedAsset = useMemo(
+    () => filteredAssets.find((asset) => asset.id === selectedAssetId) || filteredAssets[0] || null,
+    [filteredAssets, selectedAssetId]
   );
 
-  const selectedQrAsset = useMemo(
-    () => auditableAssets.find((asset) => asset.id === qrAssetId) || null,
-    [auditableAssets, qrAssetId]
-  );
-
-  const departmentFilterOptions = useMemo(() => {
-    const values = Array.from(
-      new Set(deviceChecks.map((check) => check.department).filter(Boolean))
-    ) as string[];
-    return ["All", ...values.sort()];
-  }, [deviceChecks]);
+  useEffect(() => {
+    if (selectedAsset && selectedAssetId !== selectedAsset.id) setSelectedAssetId(selectedAsset.id);
+  }, [selectedAsset, selectedAssetId]);
 
   const stats = useMemo(() => {
+    const total = enrichedAssets.length;
+    const inUse = enrichedAssets.filter((a) => a.status === "In Use").length;
+    const slowDevices = enrichedAssets.filter((a) => (a.booting_speed || "").toLowerCase().includes("slow")).length;
+    const outdated = enrichedAssets.filter((a) => {
+      const update = (a.windows_update || "").toLowerCase();
+      return update.includes("not") || update.includes("pending");
+    }).length;
+    const poorPerformance = enrichedAssets.filter((a) => (a.performance || "").toLowerCase().includes("poor")).length;
+    const avgScore = total ? Math.round(enrichedAssets.reduce((sum, asset) => sum + asset.displayScore, 0) / total) : 0;
+    const critical = enrichedAssets.filter((a) => a.displayScore < 40).length;
+    const needsUpgrade = enrichedAssets.filter((a) => a.displayScore >= 40 && a.displayScore < 65).length;
+    return { total, inUse, slowDevices, outdated, poorPerformance, avgScore, critical, needsUpgrade };
+  }, [enrichedAssets]);
+
+  const healthBreakdown = useMemo(() => {
     return {
-      totalAssets: assets.length,
-      desktops: desktopAssets.length,
-      pendingAudits: pendingAuditAssets.length,
-      totalChecks: filteredChecks.length,
-      operational: filteredChecks.filter((c) => c.final_status === "Operational").length,
-      minor: filteredChecks.filter((c) => c.final_status === "Needs Minor Repair").length,
-      major: filteredChecks.filter((c) => c.final_status === "Needs Major Repair").length,
-      out: filteredChecks.filter((c) => c.final_status === "Out of Service").length,
-      critical: filteredChecks.filter((c) => c.priority_level === "Critical").length,
+      healthy: enrichedAssets.filter((asset) => asset.displayScore >= 85).length,
+      watch: enrichedAssets.filter((asset) => asset.displayScore >= 65 && asset.displayScore < 85).length,
+      upgrade: enrichedAssets.filter((asset) => asset.displayScore >= 40 && asset.displayScore < 65).length,
+      critical: enrichedAssets.filter((asset) => asset.displayScore < 40).length,
     };
-  }, [assets.length, desktopAssets.length, pendingAuditAssets.length, filteredChecks]);
+  }, [enrichedAssets]);
 
-  const alertSummary = useMemo(() => {
-    const criticalChecks = deviceChecks.filter((c) => c.priority_level === "Critical");
-    const outOfServiceChecks = deviceChecks.filter((c) => c.final_status === "Out of Service");
-    return { criticalChecks, outOfServiceChecks };
-  }, [deviceChecks]);
-
-  const reportSummary = useMemo(() => {
-    const total = filteredChecks.length;
-    const operational = filteredChecks.filter((c) => c.final_status === "Operational").length;
-    const minor = filteredChecks.filter((c) => c.final_status === "Needs Minor Repair").length;
-    const major = filteredChecks.filter((c) => c.final_status === "Needs Major Repair").length;
-    const out = filteredChecks.filter((c) => c.final_status === "Out of Service").length;
-    const critical = filteredChecks.filter((c) => c.priority_level === "Critical").length;
-    const avgScore = total
-      ? Math.round(filteredChecks.reduce((sum, item) => sum + (item.health_score || 0), 0) / total)
-      : 0;
-
-    const byDepartment = Object.entries(
-      filteredChecks.reduce((acc, item) => {
-        const key = item.department || "Unassigned";
+  const departmentGraphData = useMemo(() => {
+    return Object.entries(
+      enrichedAssets.reduce((acc, asset) => {
+        const key = asset.location || "Unassigned";
         acc[key] = (acc[key] || 0) + 1;
         return acc;
       }, {} as Record<string, number>)
-    ).sort((a, b) => b[1] - a[1]);
+    )
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [enrichedAssets]);
 
-    return { total, operational, minor, major, out, critical, avgScore, byDepartment };
-  }, [filteredChecks]);
+  const categoryGraphData = useMemo(() => {
+    return Object.entries(
+      enrichedAssets.reduce((acc, asset) => {
+        const key = asset.category || "Uncategorized";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
+    )
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [enrichedAssets]);
 
+  const performanceGraphData = useMemo(() => {
+    return {
+      good: enrichedAssets.filter((asset) => (asset.performance || "").toLowerCase() === "good").length,
+      fair: enrichedAssets.filter((asset) => (asset.performance || "").toLowerCase() === "fair").length,
+      poor: enrichedAssets.filter((asset) => (asset.performance || "").toLowerCase() === "poor").length,
+      unknown: enrichedAssets.filter((asset) => !(asset.performance || "").trim()).length,
+    };
+  }, [enrichedAssets]);
 
-  function findAssetByScanCode(code: string) {
+  const graphMaxDepartment = useMemo(() => Math.max(1, ...departmentGraphData.map((item) => item.value)), [departmentGraphData]);
+  const graphMaxCategory = useMemo(() => Math.max(1, ...categoryGraphData.map((item) => item.value)), [categoryGraphData]);
+  const categoryOptions = useMemo(
+    () => ["All", ...Array.from(new Set(assets.map((a) => a.category).filter(Boolean))).sort()],
+    [assets]
+  );
+
+  function findAssetByCode(code: string) {
     const normalized = code.trim().toLowerCase();
-    return auditableAssets.find((asset) => {
-      return (
+    return enrichedAssets.find(
+      (asset) =>
         asset.asset_tag?.toLowerCase() === normalized ||
         asset.serial_number?.toLowerCase() === normalized
-      );
-    });
+    );
   }
 
   function handleScannedCode(code: string) {
-    const asset = findAssetByScanCode(code);
-    if (!asset) {
+    const matched = findAssetByCode(code);
+    if (!matched) {
       setScannerStatus(`No asset found for code: ${code}`);
       return false;
     }
 
     setManualScanCode(code);
-    setScannerStatus(`Matched asset: ${asset.asset_tag} - ${asset.item_name}`);
-    startAuditForAsset(asset);
+    setSelectedAssetId(matched.id);
+    setActiveTab("inventory");
+    setScannerStatus(`Matched ${matched.asset_tag} - ${matched.item_name}`);
     stopScanner();
+    window.scrollTo({ top: 0, behavior: "smooth" });
     return true;
   }
 
   async function startScanner() {
-    if (!scannerSupported) {
-      setScannerStatus("Camera scanner is not supported on this browser. Use manual code entry below.");
+    if (!scannerSupported || !window.BarcodeDetector) {
+      setScannerStatus("Camera scanner is not supported on this browser. Use manual scan instead.");
       return;
     }
 
@@ -1049,7 +668,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
         video: { facingMode: { ideal: "environment" } },
         audio: false,
       });
-
       mediaStreamRef.current = stream;
       setScannerOpen(true);
 
@@ -1058,33 +676,31 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
         await videoRef.current.play();
       }
 
-      const detector = new window.BarcodeDetector!({
+      const detector = new window.BarcodeDetector({
         formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
       });
 
       const scan = async () => {
         if (!videoRef.current || videoRef.current.readyState < 2) {
-          scanLoopRef.current = window.setTimeout(scan, 500);
+          scanLoopRef.current = window.setTimeout(scan, 400);
           return;
         }
 
         try {
           const results = await detector.detect(videoRef.current);
           const value = results?.[0]?.rawValue;
-          if (value) {
-            const matched = handleScannedCode(value);
-            if (matched) return;
-          }
+          if (value && handleScannedCode(value)) return;
         } catch {
-          // ignore scan loop errors and continue retrying
+          // keep retrying quietly
         }
 
-        scanLoopRef.current = window.setTimeout(scan, 700);
+        scanLoopRef.current = window.setTimeout(scan, 600);
       };
 
       scan();
     } catch (error) {
-      setScannerStatus("Unable to access camera. Check camera permission and try again.");
+      console.error(error);
+      setScannerStatus("Could not access camera. Check permissions and try again.");
       stopScanner();
     }
   }
@@ -1094,16 +710,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       window.clearTimeout(scanLoopRef.current);
       scanLoopRef.current = null;
     }
-
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
-
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-
     setScannerOpen(false);
   }
 
@@ -1116,753 +729,596 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     handleScannedCode(manualScanCode.trim());
   }
 
-  function resetFilters() {
-    setSearch("");
-    setDivisionFilter("All");
-    setDepartmentFilter("All");
-    setStatusFilter("All");
-    setPriorityFilter("All");
-    setDateFilter("");
-    setAssetTypeFilter("All");
-  }
-
-  function setAllChecks(value: boolean) {
-    setDeviceCheckForm((prev) => {
-      const next = { ...prev };
-      for (const key of CHECK_KEYS) next[key] = value as never;
-      return next;
-    });
-  }
-
-  function flagCriticalIssue() {
-    setDeviceCheckForm((prev) => ({
-      ...prev,
-      issueDetected: true,
-      priorityLevel: "Critical",
-      remarks: prev.remarks || "Critical issue detected during audit. Requires urgent attention.",
-    }));
-  }
-
-  function startAuditForAsset(asset: ITAsset) {
-    setDeviceCheckForm((prev) => ({
-      ...prev,
-      assetId: String(asset.id),
-    }));
-    setOpenSection("audit");
-    setQuickAuditMode(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function loadAssetForEdit(asset: ITAsset) {
+  function fillAssetForm(asset: ITAsset) {
     setEditingAssetId(asset.id);
     setAssetForm({
-      assetTag: asset.asset_tag || "",
-      itemName: asset.item_name || "",
-      category: asset.category || "",
+      assetTag: asset.asset_tag,
+      itemName: asset.item_name,
+      category: asset.category,
       brand: asset.brand || "",
       model: asset.model || "",
       serialNumber: asset.serial_number || "",
       quantity: String(asset.quantity || 1),
-      condition: (asset.condition as AssetCondition) || "Good",
-      status: (asset.status as AssetStatus) || "In Store",
+      condition: asset.condition || "Good",
+      status: asset.status || "In Store",
       assignedTo: asset.assigned_to || "",
       location: asset.location || "",
       supplier: asset.supplier || "",
       purchaseDate: asset.purchase_date || "",
       warrantyExpiry: asset.warranty_expiry || "",
       notes: asset.notes || "",
+      os: asset.os || "",
+      ram: asset.ram || "",
+      systemType: asset.system_type || "",
+      connectionType: asset.connection_type || "",
+      msOffice: asset.ms_office || "",
+      monitor: asset.monitor || "",
+      keyboard: asset.keyboard || "",
+      mouse: asset.mouse || "",
+      storage: asset.storage || "",
+      onlineStatus: asset.online_status || "",
+      windowsUpdate: asset.windows_update || "",
+      desktopLoadingSpeed: asset.desktop_loading_speed || "",
+      bootingSpeed: asset.booting_speed || "",
+      performance: asset.performance || "",
     });
+    setActiveTab("inventory");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function openQrForAsset(asset: ITAsset) {
-    setQrAssetId(asset.id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function cancelEdit() {
+  function resetAssetForm() {
     setEditingAssetId(null);
     setAssetForm(EMPTY_ASSET_FORM);
   }
 
-  async function handleDeleteAsset(assetId: number) {
-    const ok = window.confirm("Delete this inventory item? This cannot be undone.");
-    if (!ok) return;
-
-    const { error } = await supabase.from("it_assets").delete().eq("id", assetId);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    await refreshAll({ silent: true, showRefreshing: false });
-    setLiveUpdateMessage("Inventory item deleted");
-    alert("Inventory item deleted.");
-  }
-
-  async function handleDeleteAudit(auditId: number) {
-    const ok = window.confirm("Delete this audit record? This cannot be undone.");
-    if (!ok) return;
-
-    const { error } = await supabase.from("device_status_checks").delete().eq("id", auditId);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    if (selectedCheckId === auditId) setSelectedCheckId(null);
-    await refreshAll({ silent: true, showRefreshing: false });
-    setLiveUpdateMessage("Audit record deleted");
-    alert("Audit record deleted.");
-  }
-
-  async function handleAddAsset(e: React.FormEvent) {
+  async function handleSaveAsset(e: React.FormEvent) {
     e.preventDefault();
-
     if (!assetForm.assetTag || !assetForm.itemName || !assetForm.category || !assetForm.location) {
       alert("Please fill Asset Tag, Item Name, Category, and Location.");
       return;
     }
 
     setSavingAsset(true);
-
     const payload = {
-      asset_tag: assetForm.assetTag,
-      item_name: assetForm.itemName,
-      category: assetForm.category,
-      brand: assetForm.brand || null,
-      model: assetForm.model || null,
-      serial_number: assetForm.serialNumber || null,
-      quantity: Number(assetForm.quantity) || 1,
+      asset_tag: assetForm.assetTag.trim(),
+      item_name: assetForm.itemName.trim(),
+      category: assetForm.category.trim(),
+      brand: assetForm.brand.trim() || null,
+      model: assetForm.model.trim() || null,
+      serial_number: assetForm.serialNumber.trim() || null,
+      quantity: Math.max(1, safeNumber(assetForm.quantity) || 1),
       condition: assetForm.condition,
       status: assetForm.status,
-      assigned_to: assetForm.assignedTo || null,
-      location: assetForm.location,
-      supplier: assetForm.supplier || null,
+      assigned_to: assetForm.assignedTo.trim() || null,
+      location: assetForm.location.trim(),
+      supplier: assetForm.supplier.trim() || null,
       purchase_date: assetForm.purchaseDate || null,
       warranty_expiry: assetForm.warrantyExpiry || null,
-      notes: assetForm.notes || null,
+      notes: assetForm.notes.trim() || null,
+      os: assetForm.os.trim() || null,
+      ram: assetForm.ram.trim() || null,
+      system_type: assetForm.systemType.trim() || null,
+      connection_type: assetForm.connectionType.trim() || null,
+      ms_office: assetForm.msOffice.trim() || null,
+      monitor: assetForm.monitor.trim() || null,
+      keyboard: assetForm.keyboard.trim() || null,
+      mouse: assetForm.mouse.trim() || null,
+      storage: assetForm.storage.trim() || null,
+      online_status: assetForm.onlineStatus.trim() || null,
+      windows_update: assetForm.windowsUpdate.trim() || null,
+      desktop_loading_speed: assetForm.desktopLoadingSpeed.trim() || null,
+      booting_speed: assetForm.bootingSpeed.trim() || null,
+      performance: assetForm.performance.trim() || null,
     };
 
-    const response = editingAssetId
-      ? await supabase.from("it_assets").update(payload).eq("id", editingAssetId)
-      : await supabase.from("it_assets").insert([payload]);
-
-    if (response.error) {
+    try {
+      const result = editingAssetId
+        ? await supabase.from("it_assets").update(payload).eq("id", editingAssetId)
+        : await supabase.from("it_assets").insert([payload]);
+      if (result.error) throw result.error;
+      resetAssetForm();
+      await refreshAll(false);
+      alert(editingAssetId ? "Asset updated successfully." : "Asset added successfully.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to save asset");
+    } finally {
       setSavingAsset(false);
-      alert(response.error.message);
-      return;
     }
-
-    setAssetForm(EMPTY_ASSET_FORM);
-    setEditingAssetId(null);
-    await refreshAll({ silent: true, showRefreshing: false });
-    setSavingAsset(false);
-    setLiveUpdateMessage(editingAssetId ? "Inventory item updated successfully" : "Inventory item added successfully");
-    alert(editingAssetId ? "Inventory item updated successfully." : "Asset added to inventory successfully.");
   }
 
-  async function handleSaveDeviceCheck(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (
-      !deviceCheckForm.assetId ||
-      !deviceCheckForm.inspectedBy ||
-      !deviceCheckForm.division ||
-      !deviceCheckForm.department ||
-      !deviceCheckForm.officeArea
-    ) {
-      alert("Please select asset, inspector, division, department, and office/area.");
-      return;
+  async function handleDeleteAsset(id: number) {
+    if (!window.confirm("Delete this asset?")) return;
+    try {
+      const { error } = await supabase.from("it_assets").delete().eq("id", id);
+      if (error) throw error;
+      await refreshAll(false);
+      if (selectedAssetId === id) setSelectedAssetId(null);
+      alert("Asset deleted.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to delete asset");
     }
+  }
 
-    const asset = assets.find((item) => item.id === Number(deviceCheckForm.assetId));
-    if (!asset) {
-      alert("Asset not found.");
-      return;
-    }
-
-    setSavingDeviceCheck(true);
-
-    const healthScore = calculateHealthScore(deviceCheckForm);
-    const finalStatus = calculateAutoStatus(
-      healthScore,
-      deviceCheckForm.issueDetected,
-      deviceCheckForm.priorityLevel
-    );
-
-    const payload = {
-      asset_id: asset.id,
-      asset_tag: asset.asset_tag,
-      item_name: asset.item_name,
-      category: asset.category,
-      location: asset.location,
-      assigned_to: asset.assigned_to,
-      inspected_by: deviceCheckForm.inspectedBy,
-      inspection_date: deviceCheckForm.inspectionDate,
-      division: deviceCheckForm.division,
-      department: deviceCheckForm.department,
-      office_area: deviceCheckForm.officeArea,
-      assigned_role: deviceCheckForm.assignedRole || null,
-
-      monitor_ok: deviceCheckForm.monitorOk,
-      keyboard_ok: deviceCheckForm.keyboardOk,
-      mouse_ok: deviceCheckForm.mouseOk,
-      cpu_ok: deviceCheckForm.cpuOk,
-      ports_ok: deviceCheckForm.portsOk,
-      cables_ok: deviceCheckForm.cablesOk,
-      cleanliness_ok: deviceCheckForm.cleanlinessOk,
-
-      power_on_ok: deviceCheckForm.powerOnOk,
-      boot_ok: deviceCheckForm.bootOk,
-      noise_ok: deviceCheckForm.noiseOk,
-      overheating_ok: deviceCheckForm.overheatingOk,
-      performance_ok: deviceCheckForm.performanceOk,
-
-      os_ok: deviceCheckForm.osOk,
-      windows_activated_ok: deviceCheckForm.windowsActivatedOk,
-      windows_updated_ok: deviceCheckForm.windowsUpdatedOk,
-      antivirus_installed_ok: deviceCheckForm.antivirusInstalledOk,
-      antivirus_updated_ok: deviceCheckForm.antivirusUpdatedOk,
-      virus_free_ok: deviceCheckForm.virusFreeOk,
-
-      office_installed_ok: deviceCheckForm.officeInstalledOk,
-      office_activated_ok: deviceCheckForm.officeActivatedOk,
-      browser_ok: deviceCheckForm.browserOk,
-      pdf_reader_ok: deviceCheckForm.pdfReaderOk,
-
-      internet_ok: deviceCheckForm.internetOk,
-      lan_ok: deviceCheckForm.lanOk,
-
-      issue_detected: deviceCheckForm.issueDetected,
-      priority_level: deviceCheckForm.priorityLevel,
-      final_status: finalStatus,
-      health_score: healthScore,
-      remarks: deviceCheckForm.remarks || null,
-    };
-
-    const { error } = await supabase.from("device_status_checks").insert([payload]);
-    if (error) {
-      setSavingDeviceCheck(false);
-      alert(error.message);
-      return;
-    }
-
-    const currentIndex = auditableAssets.findIndex((item) => item.id === Number(deviceCheckForm.assetId));
-    const nextAsset = currentIndex >= 0 ? auditableAssets[currentIndex + 1] : null;
-
-    setDeviceCheckForm({
-      ...EMPTY_DEVICE_CHECK_FORM,
-      inspectedBy: deviceCheckForm.inspectedBy,
-      inspectionDate: deviceCheckForm.inspectionDate,
-      division: deviceCheckForm.division,
-      department: deviceCheckForm.department,
-      officeArea: deviceCheckForm.officeArea,
-      assignedRole: deviceCheckForm.assignedRole,
-      assetId: nextAsset ? String(nextAsset.id) : "",
+  function openAuditForAsset(asset: ITAsset) {
+    const latest = latestAuditByAssetId.get(asset.id);
+    setAuditForm({
+      assetId: String(asset.id),
+      inspectedBy: "",
+      inspectionDate: new Date().toISOString().slice(0, 10),
+      division: "",
+      department: asset.location || "",
+      officeArea: asset.location || "",
+      assignedRole: asset.assigned_to || "",
+      priorityLevel: latest?.priority_level || "Low",
+      finalStatus: latest?.final_status || "Operational",
+      healthScore: String(latest?.health_score ?? inferHealthScore(asset)),
+      issueDetected: Boolean(latest?.issue_detected),
+      remarks: "",
     });
-
-    if (!nextAsset) {
-      setQuickAuditMode(false);
-    }
-
-    await refreshAll({ silent: true, showRefreshing: false });
-    setSavingDeviceCheck(false);
-    setLiveUpdateMessage(nextAsset ? "Audit saved. Next asset loaded" : "Audit saved successfully");
-    alert(nextAsset ? "Audit saved. Moved to next asset." : "Audit saved successfully.");
+    setSelectedAssetId(asset.id);
+    setActiveTab("audit");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function buildPrintHtml(rows: DeviceStatusCheck[]) {
-    const tableRows = rows
-      .map(
-        (check) => `
-          <tr>
-            <td>${check.inspection_date || "-"}</td>
-            <td>${check.asset_tag || "-"}</td>
-            <td>${check.item_name || "-"}</td>
-            <td>${check.division || "-"}</td>
-            <td>${check.department || "-"}</td>
-            <td>${check.office_area || "-"}</td>
-            <td>${check.assigned_role || "-"}</td>
-            <td>${check.inspected_by || "-"}</td>
-            <td>${check.priority_level || "-"}</td>
-            <td>${check.final_status || "-"}</td>
-            <td>${check.health_score ?? "-"}</td>
-          </tr>
-        `
-      )
-      .join("");
+  async function handleSaveAudit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!auditForm.assetId || !auditForm.inspectedBy) {
+      alert("Please select an asset and inspector name.");
+      return;
+    }
 
+    const asset = assets.find((item) => item.id === Number(auditForm.assetId));
+    if (!asset) {
+      alert("Selected asset not found.");
+      return;
+    }
+
+    setSavingAudit(true);
+    try {
+      const payload = {
+        asset_id: asset.id,
+        asset_tag: asset.asset_tag,
+        item_name: asset.item_name,
+        category: asset.category,
+        location: asset.location,
+        assigned_to: asset.assigned_to,
+        inspected_by: auditForm.inspectedBy.trim(),
+        inspection_date: auditForm.inspectionDate,
+        division: auditForm.division || null,
+        department: auditForm.department || null,
+        office_area: auditForm.officeArea || null,
+        assigned_role: auditForm.assignedRole || null,
+        issue_detected: auditForm.issueDetected,
+        priority_level: auditForm.priorityLevel,
+        final_status: auditForm.finalStatus,
+        health_score: safeNumber(auditForm.healthScore),
+        remarks: auditForm.remarks.trim() || null,
+      };
+      const { error } = await supabase.from("device_status_checks").insert([payload]);
+      if (error) throw error;
+      setAuditForm(EMPTY_AUDIT_FORM);
+      await refreshAll(false);
+      setActiveTab("history");
+      alert("Audit saved successfully.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to save audit");
+    } finally {
+      setSavingAudit(false);
+    }
+  }
+
+  function openPrintWindow(title: string, html: string) {
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+    if (!printWindow) {
+      alert("Please allow pop-ups to export the PDF.");
+      return;
+    }
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => {
+      printWindow.print();
+    }, 500);
+  }
+
+  function buildPdfShell(title: string, subtitle: string, content: string) {
     return `
       <html>
         <head>
-          <title>KOPKOP College ICT Asset Audit Report</title>
+          <title>${title}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-            h1 { margin: 0 0 8px; }
-            p { margin: 0 0 18px; color: #444; }
-            .summary { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin: 18px 0 24px; }
-            .card { border: 1px solid #ddd; border-radius: 12px; padding: 12px; }
-            .card h3 { margin: 0; font-size: 12px; color: #666; text-transform: uppercase; }
-            .card p { margin: 6px 0 0; font-size: 22px; font-weight: bold; color: #111; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #999; padding: 8px; text-align: left; vertical-align: top; }
-            th { background: #f2f2f2; }
+            body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; }
+            h1 { margin: 0; font-size: 26px; }
+            h2 { margin: 0 0 10px; font-size: 18px; }
+            p { color: #475569; line-height: 1.5; }
+            .meta { margin-top: 8px; font-size: 12px; color: #64748b; }
+            .hero { border: 1px solid #cbd5e1; border-radius: 18px; padding: 18px 20px; background: linear-gradient(135deg, #f8fafc, #ecfeff); }
+            .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 22px; }
+            .card { border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; background: white; }
+            .label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .08em; }
+            .value { margin-top: 8px; font-size: 24px; font-weight: 700; color: #0f172a; }
+            .section { margin-top: 24px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; vertical-align: top; }
+            th { background: #f8fafc; }
+            .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+            .good { background: #dcfce7; color: #166534; }
+            .watch { background: #fef3c7; color: #92400e; }
+            .upgrade { background: #fed7aa; color: #9a3412; }
+            .critical { background: #fee2e2; color: #991b1b; }
           </style>
         </head>
         <body>
-          <h1>KOPKOP College ICT Asset Audit & Compliance System</h1>
-          <p>Generated: ${new Date().toLocaleString()}<br />Total Checks: ${rows.length}</p>
-          <div class="summary">
-            <div class="card"><h3>Total Checks</h3><p>${rows.length}</p></div>
-            <div class="card"><h3>Operational</h3><p>${rows.filter((r) => r.final_status === "Operational").length}</p></div>
-            <div class="card"><h3>Minor</h3><p>${rows.filter((r) => r.final_status === "Needs Minor Repair").length}</p></div>
-            <div class="card"><h3>Major</h3><p>${rows.filter((r) => r.final_status === "Needs Major Repair").length}</p></div>
-            <div class="card"><h3>Out</h3><p>${rows.filter((r) => r.final_status === "Out of Service").length}</p></div>
-            <div class="card"><h3>Critical</h3><p>${rows.filter((r) => r.priority_level === "Critical").length}</p></div>
-            <div class="card"><h3>Average Score</h3><p>${rows.length ? Math.round(rows.reduce((a,b)=>a+(b.health_score||0),0)/rows.length) : 0}%</p></div>
+          <div class="hero">
+            <h1>${title}</h1>
+            <p>${subtitle}</p>
+            <div class="meta">KOPKOP College ICT Asset, Device Health & Audit System • Generated ${new Date().toLocaleString()}</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Asset Tag</th>
-                <th>Item</th>
-                <th>Division</th>
-                <th>Department</th>
-                <th>Office / Area</th>
-                <th>Assigned Role</th>
-                <th>Inspector</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Health Score</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows}</tbody>
-          </table>
+          ${content}
         </body>
       </html>
     `;
   }
 
-  function printReport() {
-    if (filteredChecks.length === 0) {
-      alert("No checks available to print.");
-      return;
-    }
-    const printWindow = window.open("", "_blank", "width=1200,height=800");
-    if (!printWindow) {
-      alert("Please allow pop-ups to print the report.");
-      return;
-    }
-    printWindow.document.write(buildPrintHtml(filteredChecks));
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+  function healthPillClassForPdf(label: string) {
+    if (label === "Healthy") return "pill good";
+    if (label === "Watch") return "pill watch";
+    if (label === "Needs Upgrade") return "pill upgrade";
+    return "pill critical";
   }
 
-  function printSummaryReport() {
-    const rows = reportSummary.byDepartment
-      .map(([department, count]) => `<tr><td>${department}</td><td>${count}</td></tr>`)
+  function exportSummaryPdf() {
+    const departmentRows = departmentGraphData
+      .map((item) => `<tr><td>${item.label}</td><td>${item.value}</td></tr>`)
       .join("");
 
-    const html = `
-      <html>
-        <head>
-          <title>KOPKOP College Summary Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-            h1, h2 { margin: 0 0 10px; }
-            p { margin: 0 0 16px; color: #444; }
-            .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 24px; }
-            .card { border: 1px solid #ddd; border-radius: 12px; padding: 12px; }
-            .label { font-size: 12px; color: #666; text-transform: uppercase; }
-            .value { margin-top: 8px; font-size: 26px; font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; font-size: 13px; }
-            th, td { border: 1px solid #999; padding: 8px; text-align: left; }
-            th { background: #f2f2f2; }
-          </style>
-        </head>
-        <body>
-          <h1>KOPKOP College ICT Asset Audit Summary Report</h1>
-          <p>Generated: ${new Date().toLocaleString()}</p>
-          <div class="grid">
-            <div class="card"><div class="label">Total Checks</div><div class="value">${reportSummary.total}</div></div>
-            <div class="card"><div class="label">Operational</div><div class="value">${reportSummary.operational}</div></div>
-            <div class="card"><div class="label">Minor Repair</div><div class="value">${reportSummary.minor}</div></div>
-            <div class="card"><div class="label">Major Repair</div><div class="value">${reportSummary.major}</div></div>
-            <div class="card"><div class="label">Out of Service</div><div class="value">${reportSummary.out}</div></div>
-            <div class="card"><div class="label">Critical</div><div class="value">${reportSummary.critical}</div></div>
-            <div class="card"><div class="label">Average Score</div><div class="value">${reportSummary.avgScore}%</div></div>
-            <div class="card"><div class="label">Filter Department</div><div class="value" style="font-size:18px">${departmentFilter}</div></div>
-          </div>
-          <h2>Checks by Department</h2>
-          <table>
-            <thead><tr><th>Department</th><th>Total Checks</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="2">No data</td></tr>'}</tbody>
-          </table>
-        </body>
-      </html>
+    const content = `
+      <div class="grid">
+        <div class="card"><div class="label">Total Assets</div><div class="value">${stats.total}</div></div>
+        <div class="card"><div class="label">Average Health</div><div class="value">${stats.avgScore}%</div></div>
+        <div class="card"><div class="label">Needs Upgrade</div><div class="value">${stats.needsUpgrade}</div></div>
+        <div class="card"><div class="label">Critical</div><div class="value">${stats.critical}</div></div>
+      </div>
+      <div class="section">
+        <h2>Health Overview</h2>
+        <table>
+          <thead><tr><th>Indicator</th><th>Total</th></tr></thead>
+          <tbody>
+            <tr><td>Healthy Devices</td><td>${healthBreakdown.healthy}</td></tr>
+            <tr><td>Watch Devices</td><td>${healthBreakdown.watch}</td></tr>
+            <tr><td>Needs Upgrade</td><td>${healthBreakdown.upgrade}</td></tr>
+            <tr><td>Critical Devices</td><td>${healthBreakdown.critical}</td></tr>
+            <tr><td>Slow Devices</td><td>${stats.slowDevices}</td></tr>
+            <tr><td>Needs Windows Updates</td><td>${stats.outdated}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="section">
+        <h2>Assets by Department / Location</h2>
+        <table>
+          <thead><tr><th>Department / Location</th><th>Assets</th></tr></thead>
+          <tbody>${departmentRows || '<tr><td colspan="2">No data</td></tr>'}</tbody>
+        </table>
+      </div>
     `;
-
-    const printWindow = window.open("", "_blank", "width=1200,height=800");
-    if (!printWindow) {
-      alert("Please allow pop-ups to print the report.");
-      return;
-    }
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    openPrintWindow(
+      "KOPKOP College ICT Summary Report",
+      buildPdfShell(
+        "KOPKOP College ICT Summary Report",
+        "Use your browser's Save as PDF option in the print dialog to export this report as a PDF file.",
+        content
+      )
+    );
   }
 
-  function printFaultReport() {
-    const faultRows = filteredChecks.filter(
-      (c) =>
-        c.final_status === "Needs Major Repair" ||
-        c.final_status === "Out of Service" ||
-        c.priority_level === "Critical"
+  function exportInventoryPdf() {
+    const rows = filteredAssets
+      .map((asset) => {
+        const health = computeAssetHealth(asset, latestAuditByAssetId.get(asset.id));
+        return `
+          <tr>
+            <td>${asset.asset_tag}</td>
+            <td>${asset.item_name}</td>
+            <td>${asset.category || "-"}</td>
+            <td>${asset.location || "-"}</td>
+            <td>${asset.assigned_to || "-"}</td>
+            <td>${asset.os || "-"}</td>
+            <td>${asset.ram || "-"}</td>
+            <td>${asset.storage || "-"}</td>
+            <td><span class="${healthPillClassForPdf(health.label)}">${health.label}</span></td>
+            <td>${health.score}%</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const content = `
+      <div class="grid">
+        <div class="card"><div class="label">Rows Exported</div><div class="value">${filteredAssets.length}</div></div>
+        <div class="card"><div class="label">In Use</div><div class="value">${stats.inUse}</div></div>
+        <div class="card"><div class="label">Slow Devices</div><div class="value">${stats.slowDevices}</div></div>
+        <div class="card"><div class="label">Critical</div><div class="value">${stats.critical}</div></div>
+      </div>
+      <div class="section">
+        <h2>Inventory Export</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Asset Tag</th>
+              <th>Computer Name</th>
+              <th>Category</th>
+              <th>Department / Location</th>
+              <th>Assigned To</th>
+              <th>OS</th>
+              <th>RAM</th>
+              <th>Storage</th>
+              <th>Health</th>
+              <th>Score</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="10">No assets to export</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+    openPrintWindow(
+      "KOPKOP College ICT Inventory Export",
+      buildPdfShell(
+        "KOPKOP College ICT Inventory Export",
+        "Use your browser's Save as PDF option in the print dialog to export this inventory report.",
+        content
+      )
     );
+  }
 
-    if (faultRows.length === 0) {
-      alert("No fault records found for the current filters.");
-      return;
-    }
+  function exportAlertsPdf() {
+    const flaggedAssets = filteredAssets
+      .map((asset) => ({ asset, health: computeAssetHealth(asset, latestAuditByAssetId.get(asset.id)) }))
+      .filter(({ health }) => health.label === "Needs Upgrade" || health.label === "Critical" || health.alerts.length > 0);
 
-    const html = buildPrintHtml(faultRows);
-    const printWindow = window.open("", "_blank", "width=1200,height=800");
-    if (!printWindow) {
-      alert("Please allow pop-ups to print the report.");
-      return;
-    }
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    const rows = flaggedAssets
+      .map(({ asset, health }) => `
+        <tr>
+          <td>${asset.asset_tag}</td>
+          <td>${asset.item_name}</td>
+          <td>${asset.location || "-"}</td>
+          <td><span class="${healthPillClassForPdf(health.label)}">${health.label}</span></td>
+          <td>${health.score}%</td>
+          <td>${health.alerts.join(", ") || "-"}</td>
+        </tr>
+      `)
+      .join("");
+
+    const content = `
+      <div class="grid">
+        <div class="card"><div class="label">Flagged Devices</div><div class="value">${flaggedAssets.length}</div></div>
+        <div class="card"><div class="label">Needs Upgrade</div><div class="value">${stats.needsUpgrade}</div></div>
+        <div class="card"><div class="label">Critical</div><div class="value">${stats.critical}</div></div>
+        <div class="card"><div class="label">Windows Updates Needed</div><div class="value">${stats.outdated}</div></div>
+      </div>
+      <div class="section">
+        <h2>Priority Alert Export</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Asset Tag</th>
+              <th>Computer Name</th>
+              <th>Department / Location</th>
+              <th>Health</th>
+              <th>Score</th>
+              <th>Recommended Attention</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="6">No flagged devices found</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+    openPrintWindow(
+      "KOPKOP College ICT Priority Alerts",
+      buildPdfShell(
+        "KOPKOP College ICT Priority Alerts",
+        "Use your browser's Save as PDF option in the print dialog to export this alerts report.",
+        content
+      )
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+        <div className="rounded-3xl bg-white px-8 py-6 text-center shadow-sm">
+          <p className="text-lg font-semibold text-slate-900">Loading KOPKOP ICT system...</p>
+          <p className="mt-2 text-sm text-slate-500">Fetching inventory, specs, scan tools, and audit records.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
-        <div className="rounded-3xl bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-900 p-6 text-white shadow-xl">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="rounded-[28px] bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-900 p-6 text-white shadow-xl">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h1 className="text-3xl font-bold">KOPKOP College ICT Asset Audit & Compliance System</h1>
-              <p className="mt-2 text-sm text-slate-200">
-                Official school-wide inventory, pending audit, compliance, and reporting platform.
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">KOPKOP College</p>
+              <h1 className="mt-2 text-3xl font-bold sm:text-4xl">ICT Asset, Device Health & Audit System</h1>
+              <p className="mt-3 max-w-3xl text-sm text-slate-200 sm:text-base">
+                Centralized inventory for desktops, laptops, device specifications, dashboard graphs, barcode and QR scanning, audit results, and PDF reporting.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={printReport}
-                className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-900"
-              >
-                Full Report
+              <button type="button" onClick={exportSummaryPdf} className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-900">
+                Export Summary PDF
               </button>
-              <button
-                type="button"
-                onClick={printSummaryReport}
-                className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white"
-              >
-                Summary Report
+              <button type="button" onClick={exportInventoryPdf} className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white">
+                Export Inventory PDF
               </button>
-              <button
-                type="button"
-                onClick={printFaultReport}
-                className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white"
-              >
-                Fault Report
+              <button type="button" onClick={exportAlertsPdf} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
+                Export Alerts PDF
               </button>
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white"
-              >
-                Reset Filters
+              <button type="button" onClick={() => refreshAll(true)} className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white">
+                {refreshing ? "Refreshing..." : "Refresh Data"}
               </button>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-200">
+            <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="bg-white/10 text-white" />
+            <Badge text={`Assets: ${stats.total}`} className="bg-white/10 text-white" />
+            <Badge text={`Average score: ${stats.avgScore}%`} className="bg-white/10 text-white" />
+            <Badge text={scannerSupported ? "Camera scanner supported" : "Manual scan available"} className="bg-white/10 text-white" />
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
+          <StatCard label="Total Assets" value={stats.total} hint="All records in it_assets" />
+          <StatCard label="In Use" value={stats.inUse} hint="Currently assigned or active" />
+          <StatCard label="Average Health" value={`${stats.avgScore}%`} hint="Based on specs and latest audits" />
+          <StatCard label="Slow Devices" value={stats.slowDevices} hint="Boot speed flagged as slow" />
+          <StatCard label="Needs Updates" value={stats.outdated} hint="Windows update not current" />
+          <StatCard label="Poor Performance" value={stats.poorPerformance} hint="Performance field marked poor" />
+          <StatCard label="Needs Upgrade" value={stats.needsUpgrade} hint="Health score between 40% and 64%" />
+          <StatCard label="Critical" value={stats.critical} hint="Health score below 40%" />
+        </div>
+
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="rounded-3xl bg-white p-5 shadow-sm">
+            <SectionTitle title="Dashboard graphs" subtitle="Quick visual view of device health, locations, and category distribution." />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <DonutRing value={healthBreakdown.healthy} total={stats.total} label="Healthy devices" tone="emerald" />
+              <DonutRing value={healthBreakdown.critical} total={stats.total} label="Critical devices" tone="red" />
+              <DonutRing value={stats.outdated} total={stats.total} label="Needs Windows updates" tone="amber" />
+              <DonutRing value={stats.slowDevices} total={stats.total} label="Slow boot devices" tone="orange" />
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white p-5 shadow-sm">
+            <SectionTitle title="Performance distribution" subtitle="How devices are currently rated from your imported performance field." />
+            <div className="space-y-4">
+              <MiniBar label="Good" value={performanceGraphData.good} max={stats.total} tone="emerald" />
+              <MiniBar label="Fair" value={performanceGraphData.fair} max={stats.total} tone="amber" />
+              <MiniBar label="Poor" value={performanceGraphData.poor} max={stats.total} tone="red" />
+              <MiniBar label="No rating yet" value={performanceGraphData.unknown} max={stats.total} tone="slate" />
             </div>
           </div>
         </div>
 
-        {(alertSummary.criticalChecks.length > 0 || alertSummary.outOfServiceChecks.length > 0) && (
-          <div className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-5 shadow-sm">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-red-800">Attention Required</h2>
-                <p className="text-sm text-red-700">
-                  {alertSummary.criticalChecks.length} critical device(s) and {alertSummary.outOfServiceChecks.length} out-of-service device(s) need follow-up.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {alertSummary.criticalChecks.slice(0, 4).map((check) => (
-                  <span key={`critical-${check.id}`} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-red-700">
-                    {check.asset_tag || "Unknown"} · Critical
-                  </span>
-                ))}
-                {alertSummary.outOfServiceChecks.slice(0, 4).map((check) => (
-                  <span key={`out-${check.id}`} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-red-700">
-                    {check.asset_tag || "Unknown"} · Out
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-bold text-emerald-800">{liveMessage}</p>
-              <p className="text-xs text-emerald-700">
-                {lastSyncedAt ? `Last synced at ${lastSyncedAt}` : "Waiting for first sync..."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => refreshAll({ silent: false, showRefreshing: true })}
-              className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
-            >
-              {refreshing ? "Refreshing..." : "Refresh now"}
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
-          <StatCard label="Inventory Assets" value={stats.totalAssets} hint="All items in it_assets" />
-          <StatCard label="Desktop Assets" value={stats.desktops} hint="Assets matching desktop / pc / cpu" />
-          <StatCard label="Pending Audits" value={stats.pendingAudits} hint="No saved audit yet" />
-          <StatCard label="Total Checks" value={stats.totalChecks} hint="Current filtered result" />
-          <StatCard label="Operational" value={stats.operational} hint="Ready for use" />
-          <StatCard label="Minor Repair" value={stats.minor} hint="Needs small fixes" />
-          <StatCard label="Major Repair" value={stats.major} hint="Needs strong attention" />
-          <StatCard label="Out of Service" value={stats.out} hint="Not usable right now" />
-          <StatCard label="Critical" value={stats.critical} hint="Urgent follow-up" />
-        </div>
-
-        {selectedQrAsset ? (
-          <div className="mt-6 rounded-3xl bg-slate-50 p-4 sm:p-6">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">QR Generator</h2>
-                <p className="text-sm text-slate-500">
-                  Print or download this QR code and stick it on the device for faster audits.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setQrAssetId(null)}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-              >
-                Close QR
-              </button>
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-2">
-              <QRCodeCard
-                value={selectedQrAsset.asset_tag}
-                label={`${selectedQrAsset.asset_tag} - Asset Tag`}
-                subtitle={`${selectedQrAsset.item_name} • ${selectedQrAsset.location || "No location"}`}
-              />
-              {selectedQrAsset.serial_number ? (
-                <QRCodeCard
-                  value={selectedQrAsset.serial_number}
-                  label={`${selectedQrAsset.asset_tag} - Serial Number`}
-                  subtitle={`${selectedQrAsset.item_name} • ${selectedQrAsset.location || "No location"}`}
-                />
+        <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className="rounded-3xl bg-white p-5 shadow-sm">
+            <SectionTitle title="Assets by department / location" subtitle="Top locations with the highest number of registered devices." />
+            <div className="space-y-4">
+              {departmentGraphData.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No department data yet.</div>
               ) : (
-                <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
-                  No serial number saved for this asset yet. Add one if you want a second QR code.
-                </div>
+                departmentGraphData.map((item) => (
+                  <MiniBar key={item.label} label={item.label} value={item.value} max={graphMaxDepartment} tone="blue" />
+                ))
               )}
             </div>
           </div>
-        ) : null}
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Report Average Score</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{reportSummary.avgScore}%</p>
-            <p className="mt-2 text-xs text-slate-500">Average for current filtered checks</p>
-          </div>
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Current Faults</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{reportSummary.major + reportSummary.out}</p>
-            <p className="mt-2 text-xs text-slate-500">Major repair plus out of service</p>
-          </div>
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Critical Devices</p>
-            <p className="mt-2 text-3xl font-bold text-slate-900">{reportSummary.critical}</p>
-            <p className="mt-2 text-xs text-slate-500">Urgent action from current filters</p>
-          </div>
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-500">Top Department</p>
-            <p className="mt-2 text-xl font-bold text-slate-900">{reportSummary.byDepartment[0]?.[0] || "-"}</p>
-            <p className="mt-2 text-xs text-slate-500">Most checks in current filtered result</p>
+            <SectionTitle title="Assets by category" subtitle="Quick count of desktops, laptops, printers, and other device types." />
+            <div className="space-y-4">
+              {categoryGraphData.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No category data yet.</div>
+              ) : (
+                categoryGraphData.map((item) => (
+                  <MiniBar key={item.label} label={item.label} value={item.value} max={graphMaxCategory} tone="emerald" />
+                ))
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h2 className="text-xl font-bold">Reports Dashboard</h2>
-              <p className="text-sm text-slate-500">
-                Use the current filters to generate department, summary, and fault reports.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={printSummaryReport}
-                className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Print Summary
-              </button>
-              <button
-                type="button"
-                onClick={printFaultReport}
-                className="rounded-2xl bg-red-600 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Print Fault Report
-              </button>
+        <div className="mt-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="rounded-3xl bg-white p-5 shadow-sm">
+            <SectionTitle title="Health indicators" subtitle="Automatic device health labels based on performance, speed, updates, and condition." />
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Healthy</p>
+                <p className="mt-2 text-2xl font-bold text-emerald-900">{healthBreakdown.healthy}</p>
+                <p className="mt-1 text-xs text-emerald-700">Ready for normal use</p>
+              </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Watch</p>
+                <p className="mt-2 text-2xl font-bold text-amber-900">{healthBreakdown.watch}</p>
+                <p className="mt-1 text-xs text-amber-700">Monitor these devices</p>
+              </div>
+              <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Needs Upgrade</p>
+                <p className="mt-2 text-2xl font-bold text-orange-900">{healthBreakdown.upgrade}</p>
+                <p className="mt-1 text-xs text-orange-700">Likely RAM or storage upgrade</p>
+              </div>
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Critical</p>
+                <p className="mt-2 text-2xl font-bold text-red-900">{healthBreakdown.critical}</p>
+                <p className="mt-1 text-xs text-red-700">Needs urgent IT attention</p>
+              </div>
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 xl:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 p-4">
-              <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">Checks by Department</h3>
-              <div className="mt-4 space-y-3">
-                {reportSummary.byDepartment.length === 0 ? (
-                  <p className="text-sm text-slate-500">No report data for current filters.</p>
-                ) : (
-                  reportSummary.byDepartment.slice(0, 8).map(([department, count]) => (
-                    <div key={department} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                      <span className="text-sm font-medium text-slate-800">{department}</span>
-                      <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
-                        {count}
-                      </span>
+          <div className="rounded-3xl bg-white p-5 shadow-sm">
+            <SectionTitle title="Priority alerts" subtitle="Top devices that need follow-up first." />
+            <div className="space-y-3">
+              {enrichedAssets
+                .filter((asset) => asset.displayScore < 65 || asset.alerts.length > 0)
+                .sort((a, b) => a.displayScore - b.displayScore)
+                .slice(0, 5)
+                .map((asset) => (
+                  <div key={asset.id} className="rounded-2xl border border-slate-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{asset.asset_tag} · {asset.item_name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{asset.location || "No location"} · {asset.assigned_to || "Unassigned"}</p>
+                      </div>
+                      <HealthIndicator score={asset.displayScore} />
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 p-4">
-              <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">Report Summary</h3>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operational</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">{reportSummary.operational}</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Minor Repair</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">{reportSummary.minor}</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Major Repair</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">{reportSummary.major}</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Out of Service</p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">{reportSummary.out}</p>
-                </div>
-              </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(asset.alerts.length ? asset.alerts : [asset.recommendation]).slice(0, 3).map((alert) => (
+                        <Badge key={alert} text={alert} className="bg-slate-100 text-slate-700" />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              {enrichedAssets.filter((asset) => asset.displayScore < 65 || asset.alerts.length > 0).length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No major health alerts right now.</div>
+              ) : null}
             </div>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="rounded-3xl bg-white p-4 sm:p-6 shadow-sm order-2 xl:order-1">
-            <div className="mb-4">
-              <h2 className="text-xl font-bold">{editingAssetId ? "Edit Inventory Item" : "Add Asset to Inventory"}</h2>
-              <p className="text-sm text-slate-500">
-                {editingAssetId ? "Update the selected inventory item and save your changes." : "Add a device here first, then it will appear in the inventory and audit workflow."}
-              </p>
-            </div>
+        <div className="mt-6 flex flex-wrap gap-3 rounded-3xl bg-white p-3 shadow-sm">
+          {[
+            ["dashboard", "Dashboard"],
+            ["inventory", "Inventory"],
+            ["scan", "Scan Device"],
+            ["audit", "Quick Audit"],
+            ["history", "Audit History"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveTab(key as typeof activeTab)}
+              className={`rounded-2xl px-4 py-3 text-sm font-semibold ${
+                activeTab === key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-            <form onSubmit={handleAddAsset} className="grid gap-4 sm:grid-cols-2">
-              <input className="rounded-2xl border p-3" placeholder="Asset Tag" value={assetForm.assetTag} onChange={(e) => setAssetForm({ ...assetForm, assetTag: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Item Name" value={assetForm.itemName} onChange={(e) => setAssetForm({ ...assetForm, itemName: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Category" value={assetForm.category} onChange={(e) => setAssetForm({ ...assetForm, category: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Location" value={assetForm.location} onChange={(e) => setAssetForm({ ...assetForm, location: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Brand" value={assetForm.brand} onChange={(e) => setAssetForm({ ...assetForm, brand: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Model" value={assetForm.model} onChange={(e) => setAssetForm({ ...assetForm, model: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Serial Number" value={assetForm.serialNumber} onChange={(e) => setAssetForm({ ...assetForm, serialNumber: e.target.value })} />
-              <input type="number" min="1" className="rounded-2xl border p-3" placeholder="Quantity" value={assetForm.quantity} onChange={(e) => setAssetForm({ ...assetForm, quantity: e.target.value })} />
-              <select className="rounded-2xl border p-3" value={assetForm.condition} onChange={(e) => setAssetForm({ ...assetForm, condition: e.target.value as AssetCondition })}>
-                <option value="Good">Good</option>
-                <option value="Fair">Fair</option>
-                <option value="Damaged">Damaged</option>
-              </select>
-              <select className="rounded-2xl border p-3" value={assetForm.status} onChange={(e) => setAssetForm({ ...assetForm, status: e.target.value as AssetStatus })}>
-                <option value="In Store">In Store</option>
-                <option value="In Use">In Use</option>
-                <option value="Under Repair">Under Repair</option>
-                <option value="Damaged">Damaged</option>
-                <option value="Lost">Lost</option>
-                <option value="Retired">Retired</option>
-              </select>
-              <input className="rounded-2xl border p-3 sm:col-span-2" placeholder="Notes" value={assetForm.notes} onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })} />
-              <div className="sm:col-span-2 flex flex-wrap gap-3">
-                {editingAssetId ? (
-                  <button
-                    type="button"
-                    onClick={cancelEdit}
-                    className="rounded-2xl border border-slate-300 px-4 py-3 font-semibold text-slate-700"
-                  >
-                    Cancel Edit
-                  </button>
-                ) : null}
-                <button
-                  type="submit"
-                  disabled={savingAsset}
-                  className="rounded-2xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-60"
-                >
-                  {savingAsset ? (editingAssetId ? "Updating..." : "Adding Asset...") : (editingAssetId ? "Update Inventory Item" : "Add to Inventory")}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div className="rounded-3xl bg-white p-4 sm:p-6 shadow-sm order-1 xl:order-2">
-            <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-bold">New Audit Check</h2>
-                <p className="text-sm text-slate-500">
-                  Audit any inventory asset, not just desktops.
-                </p>
-              </div>
-              <div className={`rounded-2xl px-4 py-3 text-center ${scoreTone(liveScore)}`}>
-                <p className="text-xs font-semibold uppercase tracking-wide">Health Score</p>
-                <p className="text-2xl font-bold">{liveScore}%</p>
-                <p className="text-xs">Auto Status: {autoStatus}</p>
-              </div>
-            </div>
-
-            <div className="mb-4 flex flex-wrap gap-2">
-              <MobileQuickButton
-                label="Standard Audit"
-                active={!quickAuditMode}
-                onClick={() => setQuickAuditMode(false)}
-              />
-              <MobileQuickButton
-                label="Quick Audit Mode"
-                active={quickAuditMode}
-                onClick={() => setQuickAuditMode(true)}
-              />
-            </div>
-
-            <div className="mb-4 rounded-3xl border border-slate-200 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
-                    Barcode / QR Scanner
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Scan an asset tag with your phone camera to load the device instantly.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
+        {activeTab === "scan" && (
+          <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+            <SectionTitle
+              title="Barcode / QR scanning"
+              subtitle="Scan an asset tag or serial number to open the correct device record instantly."
+            />
+            <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
+              <div className="rounded-3xl border border-slate-200 p-5">
+                <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={startScanner}
@@ -1870,628 +1326,411 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                   >
                     Open Camera Scanner
                   </button>
-                  {scannerOpen ? (
-                    <button
-                      type="button"
-                      onClick={stopScanner}
-                      className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white"
-                    >
-                      Stop Scanner
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={stopScanner}
+                    className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+                  >
+                    Stop Scanner
+                  </button>
                 </div>
-              </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]">
-                <div className="rounded-2xl bg-slate-900 p-3">
+                <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-slate-950">
                   {scannerOpen ? (
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="h-64 w-full rounded-2xl object-cover"
-                    />
+                    <video ref={videoRef} className="h-[320px] w-full object-cover" muted playsInline />
                   ) : (
-                    <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-white/20 text-center text-sm text-slate-300">
-                      Camera preview will appear here when the scanner starts.
+                    <div className="grid h-[320px] place-items-center text-center text-slate-300">
+                      <div>
+                        <p className="text-lg font-semibold">Scanner preview</p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {scannerSupported ? "Press Open Camera Scanner to begin." : "Camera scanner is not supported on this browser."}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
 
-                <form onSubmit={handleManualScanSubmit} className="rounded-2xl bg-slate-50 p-4">
-                  <label className="text-sm font-semibold text-slate-700">
-                    Manual asset tag / serial entry
-                  </label>
+                <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">{scannerStatus}</p>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 p-5">
+                <h3 className="text-lg font-bold text-slate-900">Manual scan / typed lookup</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Paste or type the asset tag or serial number. This is useful if a scanner returns the code as text.
+                </p>
+
+                <form onSubmit={handleManualScanSubmit} className="mt-4 space-y-3">
                   <input
-                    className="mt-2 w-full rounded-2xl border p-3"
-                    placeholder="Example: KC-PC-001"
                     value={manualScanCode}
                     onChange={(e) => setManualScanCode(e.target.value)}
+                    placeholder="Example: KC-LT5QS or serial number"
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                   />
                   <button
                     type="submit"
-                    className="mt-3 w-full rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white"
+                    className="w-full rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white"
                   >
-                    Load Asset
+                    Scan & Open Device
                   </button>
-                  <p className="mt-3 text-xs text-slate-500">
-                    Use this fallback if camera scan is not supported on the device.
-                  </p>
                 </form>
-              </div>
 
-              {scannerStatus ? (
-                <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  {scannerStatus}
+                <div className="mt-6 rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Best practice</p>
+                  <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                    <li>• Print labels using the asset tag as the barcode or QR value.</li>
+                    <li>• Keep the same asset tag in the system and on the physical device.</li>
+                    <li>• You can also scan the serial number if it is saved in the system.</li>
+                  </ul>
                 </div>
-              ) : null}
+
+                {selectedAsset ? (
+                  <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Last matched asset</p>
+                    <p className="mt-2 font-semibold text-emerald-900">{selectedAsset.asset_tag} · {selectedAsset.item_name}</p>
+                    <p className="mt-1 text-sm text-emerald-800">{selectedAsset.location || "No location"} · {selectedAsset.assigned_to || "Unassigned"}</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 grid gap-6 xl:grid-cols-[1.55fr_1fr]">
+          <div className="space-y-6">
+            <div className="rounded-3xl bg-white p-5 shadow-sm">
+              <SectionTitle
+                title="Search, filter, and review assets"
+                subtitle="Find a device quickly and inspect its technical profile, performance, and current usage."
+              />
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search asset tag, name, brand, user..."
+                  className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none ring-0"
+                />
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                  <option>All</option>
+                  <option>In Use</option>
+                  <option>In Store</option>
+                  <option>Under Repair</option>
+                  <option>Damaged</option>
+                  <option>Lost</option>
+                  <option>Retired</option>
+                </select>
+                <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                  {categoryOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+                <select value={performanceFilter} onChange={(e) => setPerformanceFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                  <option>All</option>
+                  <option>Good</option>
+                  <option>Fair</option>
+                  <option>Poor</option>
+                </select>
+              </div>
             </div>
 
-            <div className="mb-4 flex flex-wrap gap-2">
-              <button type="button" onClick={() => setAllChecks(true)} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white">
-                Mark All OK
-              </button>
-              <button type="button" onClick={() => setAllChecks(false)} className="rounded-2xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-800">
-                Mark All Not OK
-              </button>
-              <button type="button" onClick={flagCriticalIssue} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
-                Flag Critical Device
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveDeviceCheck} className="grid gap-4">
-              <select className="rounded-2xl border p-3" value={deviceCheckForm.assetId} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, assetId: e.target.value })}>
-                <option value="">Select Inventory Asset</option>
-                {auditableAssets.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.asset_tag} - {asset.item_name} {asset.location ? `(${asset.location})` : ""}
-                  </option>
-                ))}
-              </select>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <input className="rounded-2xl border p-3" placeholder="Inspected By" value={deviceCheckForm.inspectedBy} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, inspectedBy: e.target.value })} />
-                <input type="date" className="rounded-2xl border p-3" value={deviceCheckForm.inspectionDate} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, inspectionDate: e.target.value })} />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <select className="rounded-2xl border p-3" value={deviceCheckForm.division} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, division: e.target.value, department: "", officeArea: "", assignedRole: "" })}>
-                  <option value="">Select Division</option>
-                  {DIVISIONS.map((division) => (
-                    <option key={division} value={division}>{division}</option>
-                  ))}
-                </select>
-
-                <select className="rounded-2xl border p-3" value={deviceCheckForm.department} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, department: e.target.value, officeArea: "", assignedRole: "" })}>
-                  <option value="">Select Department</option>
-                  {departmentOptionsForForm.map((department) => (
-                    <option key={department} value={department}>{department}</option>
-                  ))}
-                </select>
-
-                <select className="rounded-2xl border p-3" value={deviceCheckForm.officeArea} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, officeArea: e.target.value })}>
-                  <option value="">Select Office / Area</option>
-                  {officeOptionsForForm.map((office) => (
-                    <option key={office} value={office}>{office}</option>
-                  ))}
-                </select>
-
-                <select className="rounded-2xl border p-3" value={deviceCheckForm.assignedRole} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, assignedRole: e.target.value })}>
-                  <option value="">Select Assigned Role</option>
-                  {roleOptionsForForm.map((role) => (
-                    <option key={role} value={role}>{role}</option>
-                  ))}
-                </select>
-              </div>
-
-              {CHECK_GROUPS.map((group) => (
-                <div key={group.title} className="rounded-3xl border border-slate-200 p-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">{group.title}</h3>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {group.items.map((field) => (
-                      <label key={String(field.key)} className="flex items-center gap-3 rounded-2xl border border-slate-200 p-3">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(deviceCheckForm[field.key])}
-                          onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, [field.key]: e.target.checked })}
-                        />
-                        <span className="text-sm text-slate-800">{field.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex items-center gap-3 rounded-2xl border border-slate-200 p-3">
-                  <input
-                    type="checkbox"
-                    checked={deviceCheckForm.issueDetected}
-                    onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, issueDetected: e.target.checked })}
-                  />
-                  <span className="text-sm text-slate-800">Issue Detected</span>
-                </label>
-
-                <select className="rounded-2xl border p-3" value={deviceCheckForm.priorityLevel} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, priorityLevel: e.target.value as PriorityLevel })}>
-                  <option value="Low">Priority: Low</option>
-                  <option value="Medium">Priority: Medium</option>
-                  <option value="High">Priority: High</option>
-                  <option value="Critical">Priority: Critical</option>
-                </select>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <input className="rounded-2xl border p-3 bg-slate-50" value={`Auto Status: ${autoStatus}`} readOnly />
-                <input className="rounded-2xl border p-3 bg-slate-50" value={`Health Score: ${liveScore}%`} readOnly />
-              </div>
-
-              <textarea className="rounded-2xl border p-3" rows={4} placeholder="Remarks / issues found" value={deviceCheckForm.remarks} onChange={(e) => setDeviceCheckForm({ ...deviceCheckForm, remarks: e.target.value })} />
-
-              <div className="sticky bottom-0 z-10 -mx-4 border-t border-slate-200 bg-white px-4 pt-3 sm:-mx-6 sm:px-6">
-                <button type="submit" disabled={savingDeviceCheck} className="w-full rounded-2xl bg-cyan-700 px-4 py-4 font-semibold text-white disabled:opacity-60">
-                  {savingDeviceCheck ? "Saving Audit..." : (quickAuditMode ? "Save Quick Audit" : "Save Audit")}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm">
-          <div className="space-y-4">
-            <SectionToggle
-              title="Inventory Register"
-              count={filteredInventoryAssets.length}
-              isOpen={openSection === "inventory"}
-              onClick={() => setOpenSection(openSection === "inventory" ? "pending" : "inventory")}
-            />
-
-            {openSection === "inventory" ? (
-              <>
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">
-                      All inventory items stored in the system, whether audited or not.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setAssetTypeFilter("All")}
-                      className={`rounded-2xl px-4 py-2 text-sm font-semibold ${assetTypeFilter === "All" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}
-                    >
-                      All Devices
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAssetTypeFilter("Desktop")}
-                      className={`rounded-2xl px-4 py-2 text-sm font-semibold ${assetTypeFilter === "Desktop" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}
-                    >
-                      Desktops
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAssetTypeFilter("Laptop")}
-                      className={`rounded-2xl px-4 py-2 text-sm font-semibold ${assetTypeFilter === "Laptop" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}
-                    >
-                      Laptops
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAssetTypeFilter("Printer")}
-                      className={`rounded-2xl px-4 py-2 text-sm font-semibold ${assetTypeFilter === "Printer" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}
-                    >
-                      Printers
-                    </button>
-                  </div>
-                </div>
-
-                <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b text-slate-500">
-                        <th className="px-3 py-3">Asset Tag</th>
-                        <th className="px-3 py-3">Item</th>
-                        <th className="px-3 py-3">Category</th>
-                        <th className="px-3 py-3">Location</th>
-                        <th className="px-3 py-3">Assigned To</th>
-                        <th className="px-3 py-3">Inventory Status</th>
-                        <th className="px-3 py-3">Last Audit</th>
-                        <th className="px-3 py-3">Last Score</th>
-                        <th className="px-3 py-3">Last Result</th>
-                        <th className="px-3 py-3">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loading ? (
-                        <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-500">Loading inventory...</td></tr>
-                      ) : filteredInventoryAssets.length === 0 ? (
-                        <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-500">No inventory found for this filter.</td></tr>
-                      ) : (
-                        filteredInventoryAssets.map((asset) => {
-                          const latestAudit = latestAuditByAssetId.get(asset.id);
-                          const pending = !latestAudit;
-                          return (
-                            <tr
-                              key={asset.id}
-                              className={`border-b last:border-b-0 hover:bg-slate-50 ${
-                                latestAudit?.priority_level === "Critical" || latestAudit?.final_status === "Out of Service"
-                                  ? "bg-red-50"
-                                  : ""
-                              }`}
-                            >
-                              <td className="px-3 py-4 font-semibold">{asset.asset_tag}</td>
-                              <td className="px-3 py-4">{asset.item_name}</td>
-                              <td className="px-3 py-4">{asset.category}</td>
-                              <td className="px-3 py-4">{asset.location || "-"}</td>
-                              <td className="px-3 py-4">{asset.assigned_to || "-"}</td>
-                              <td className="px-3 py-4">
-                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${assetStatusBadge(asset.status || "")}`}>
-                                  {asset.status || "-"}
-                                </span>
-                              </td>
-                              <td className="px-3 py-4">{latestAudit ? formatDate(latestAudit.inspection_date) : "-"}</td>
-                              <td className="px-3 py-4">{latestAudit?.health_score ?? "-"}</td>
-                              <td className="px-3 py-4">
-                                {pending ? (
-                                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                                    Pending Audit
-                                  </span>
-                                ) : (
-                                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(latestAudit.final_status)}`}>
-                                    {latestAudit.final_status}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-4">
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => startAuditForAsset(asset)}
-                                    className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
-                                  >
-                                    {pending ? "Start Audit" : "Re-Audit"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => loadAssetForEdit(asset)}
-                                    className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => openQrForAsset(asset)}
-                                    className="rounded-xl bg-cyan-700 px-3 py-2 text-xs font-semibold text-white"
-                                  >
-                                    Generate QR
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteAsset(asset.id)}
-                                    className="rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm">
-          <div className="space-y-4">
-            <SectionToggle
-              title="Pending Audit List"
-              count={filteredPendingAssets.length}
-              isOpen={openSection === "pending"}
-              onClick={() => setOpenSection(openSection === "pending" ? "audit" : "pending")}
-            />
-
-            {openSection === "pending" ? (
-              <>
-                <p className="text-sm text-slate-500">
-                  All inventory items that do not yet have a saved audit record.
-                </p>
-
-                <div className="max-h-[420px] overflow-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b text-slate-500">
-                        <th className="px-3 py-3">Asset Tag</th>
-                        <th className="px-3 py-3">Item</th>
-                        <th className="px-3 py-3">Category</th>
-                        <th className="px-3 py-3">Location</th>
-                        <th className="px-3 py-3">Status</th>
-                        <th className="px-3 py-3">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loading ? (
-                        <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">Loading pending audit list...</td></tr>
-                      ) : filteredPendingAssets.length === 0 ? (
-                        <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">All filtered assets have an audit record.</td></tr>
-                      ) : (
-                        filteredPendingAssets.map((asset) => (
-                          <tr key={asset.id} className="border-b last:border-b-0 hover:bg-slate-50">
-                            <td className="px-3 py-4 font-semibold">{asset.asset_tag}</td>
-                            <td className="px-3 py-4">{asset.item_name}</td>
-                            <td className="px-3 py-4">{asset.category}</td>
-                            <td className="px-3 py-4">{asset.location || "-"}</td>
-                            <td className="px-3 py-4">
-                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${assetStatusBadge(asset.status || "")}`}>
-                                {asset.status || "-"}
-                              </span>
+            {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan") && (
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <SectionTitle
+                  title="Inventory overview"
+                  subtitle="Select a device to review its specs, condition, update status, and recommendation."
+                />
+                <div className="overflow-hidden rounded-3xl border border-slate-200">
+                  <div className="max-h-[620px] overflow-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="sticky top-0 bg-slate-50 text-left text-slate-600">
+                        <tr>
+                          <th className="px-4 py-3">Asset Tag</th>
+                          <th className="px-4 py-3">Device</th>
+                          <th className="px-4 py-3">Assigned To</th>
+                          <th className="px-4 py-3">Location</th>
+                          <th className="px-4 py-3">OS / RAM</th>
+                          <th className="px-4 py-3">Health</th>
+                          <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAssets.map((asset) => (
+                          <tr key={asset.id} className={`border-t border-slate-100 ${selectedAsset?.id === asset.id ? "bg-cyan-50/60" : "bg-white"}`}>
+                            <td className="px-4 py-3 font-semibold text-slate-900">{asset.asset_tag}</td>
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-slate-900">{asset.item_name}</p>
+                              <p className="text-xs text-slate-500">{asset.brand || "-"} {asset.model || ""}</p>
                             </td>
-                            <td className="px-3 py-4">
+                            <td className="px-4 py-3 text-slate-700">{asset.assigned_to || "-"}</td>
+                            <td className="px-4 py-3 text-slate-700">{asset.location || "-"}</td>
+                            <td className="px-4 py-3">
+                              <p className="text-slate-900">{asset.os || "-"}</p>
+                              <p className="text-xs text-slate-500">{asset.ram || "-"}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <HealthIndicator score={asset.displayScore} />
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge text={asset.status || "-"} className={statusPillClass(asset.status)} />
+                            </td>
+                            <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => startAuditForAsset(asset)}
-                                  className="rounded-xl bg-cyan-700 px-3 py-2 text-xs font-semibold text-white"
-                                >
-                                  Start Audit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteAsset(asset.id)}
-                                  className="rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm">
-          <div className="space-y-4">
-            <SectionToggle
-              title="Audit Register"
-              count={filteredChecks.length}
-              isOpen={openSection === "audit"}
-              onClick={() => setOpenSection(openSection === "audit" ? "inventory" : "audit")}
-            />
-
-            {openSection === "audit" ? (
-              <>
-                <p className="text-sm text-slate-500">
-                  Filter by division, department, status, priority, and date.
-                </p>
-
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                  <input className="rounded-2xl border p-3" placeholder="Search asset, office, inspector..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                  <select className="rounded-2xl border p-3" value={divisionFilter} onChange={(e) => setDivisionFilter(e.target.value)}>
-                    <option value="All">All Divisions</option>
-                    {DIVISIONS.map((division) => (
-                      <option key={division} value={division}>{division}</option>
-                    ))}
-                  </select>
-                  <select className="rounded-2xl border p-3" value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}>
-                    {departmentFilterOptions.map((option) => (
-                      <option key={option} value={option}>{option === "All" ? "All Departments" : option}</option>
-                    ))}
-                  </select>
-                  <select className="rounded-2xl border p-3" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                    <option value="All">All Status</option>
-                    <option value="Operational">Operational</option>
-                    <option value="Needs Minor Repair">Needs Minor Repair</option>
-                    <option value="Needs Major Repair">Needs Major Repair</option>
-                    <option value="Out of Service">Out of Service</option>
-                  </select>
-                  <select className="rounded-2xl border p-3" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
-                    <option value="All">All Priority</option>
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                    <option value="Critical">Critical</option>
-                  </select>
-                  <input type="date" className="rounded-2xl border p-3" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} />
-                </div>
-
-                <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b text-slate-500">
-                        <th className="px-3 py-3">Date</th>
-                        <th className="px-3 py-3">Asset Tag</th>
-                        <th className="px-3 py-3">Division</th>
-                        <th className="px-3 py-3">Department</th>
-                        <th className="px-3 py-3">Office / Area</th>
-                        <th className="px-3 py-3">Assigned Role</th>
-                        <th className="px-3 py-3">Inspector</th>
-                        <th className="px-3 py-3">Priority</th>
-                        <th className="px-3 py-3">Score</th>
-                        <th className="px-3 py-3">Status</th>
-                        <th className="px-3 py-3">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loading ? (
-                        <tr><td colSpan={11} className="px-3 py-8 text-center text-slate-500">Loading audit checks...</td></tr>
-                      ) : filteredChecks.length === 0 ? (
-                        <tr><td colSpan={11} className="px-3 py-8 text-center text-slate-500">No audit checks found.</td></tr>
-                      ) : (
-                        filteredChecks.map((check) => (
-                          <tr
-                            key={check.id}
-                            className={`border-b last:border-b-0 hover:bg-slate-50 ${
-                              check.priority_level === "Critical" ? "bg-red-50" : ""
-                            }`}
-                          >
-                            <td className="px-3 py-4">{formatDate(check.inspection_date)}</td>
-                            <td className="px-3 py-4 font-semibold">{check.asset_tag || "-"}</td>
-                            <td className="px-3 py-4">{check.division || "-"}</td>
-                            <td className="px-3 py-4">{check.department || "-"}</td>
-                            <td className="px-3 py-4">{check.office_area || "-"}</td>
-                            <td className="px-3 py-4">{check.assigned_role || "-"}</td>
-                            <td className="px-3 py-4">{check.inspected_by}</td>
-                            <td className="px-3 py-4">
-                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${priorityBadge(check.priority_level || "")}`}>
-                                {check.priority_level || "-"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-4">{check.health_score ?? "-"}</td>
-                            <td className="px-3 py-4">
-                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge(check.final_status)}`}>
-                                {check.final_status}
-                              </span>
-                            </td>
-                            <td className="px-3 py-4">
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedCheckId(check.id)}
-                                  className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
-                                >
+                                <button type="button" onClick={() => setSelectedAssetId(asset.id)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
                                   View
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteAudit(check.id)}
-                                  className="rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white"
-                                >
-                                  Delete
+                                <button type="button" onClick={() => fillAssetForm(asset)} className="rounded-xl bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-700">
+                                  Edit
+                                </button>
+                                <button type="button" onClick={() => openAuditForAsset(asset)} className="rounded-xl bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700">
+                                  Audit
                                 </button>
                               </div>
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ))}
+                        {filteredAssets.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500">
+                              No assets matched your filters.
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </>
+              </div>
+            )}
+
+            {activeTab === "history" && (
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <SectionTitle title="Recent audit history" subtitle="Latest compliance and condition checks captured from device audits." />
+                <div className="space-y-3">
+                  {deviceChecks.length === 0 ? (
+                    <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No audit records yet.</div>
+                  ) : (
+                    deviceChecks.map((check) => (
+                      <div key={check.id} className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="font-semibold text-slate-900">{check.asset_tag || "Unknown asset"} · {check.item_name || "Unknown item"}</p>
+                            <p className="mt-1 text-sm text-slate-500">{check.inspected_by} · {formatDate(check.inspection_date)}</p>
+                            <p className="mt-2 text-sm text-slate-600">{check.remarks || "No remarks recorded."}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge text={check.final_status} className={statusPillClass(check.final_status)} />
+                            <Badge text={check.priority_level || "Low"} className={statusPillClass(check.priority_level)} />
+                            <Badge text={`${check.health_score ?? 0}%`} className={scoreTone(check.health_score ?? 0)} />
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            {selectedAsset && (activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan") ? (
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <SectionTitle title="Selected device profile" subtitle="Detailed asset record with technical data and management recommendation." />
+                <div className="space-y-4">
+                  <div className="rounded-3xl bg-slate-950 p-5 text-white">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">{selectedAsset.asset_tag}</p>
+                        <h3 className="mt-2 text-2xl font-bold">{selectedAsset.item_name}</h3>
+                        <p className="mt-1 text-sm text-slate-300">{selectedAsset.brand || "-"} {selectedAsset.model || ""}</p>
+                      </div>
+                      <HealthIndicator score={selectedAsset.displayScore} />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">User / Location</p>
+                      <p className="mt-2 font-semibold text-slate-900">{selectedAsset.assigned_to || "Unassigned"}</p>
+                      <p className="mt-1 text-sm text-slate-600">{selectedAsset.location || "No location"}</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">System</p>
+                      <p className="mt-2 font-semibold text-slate-900">{selectedAsset.os || "Not recorded"}</p>
+                      <p className="mt-1 text-sm text-slate-600">{selectedAsset.ram || "No RAM"} · {selectedAsset.storage || "No storage"}</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Update & Connectivity</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge text={selectedAsset.windows_update || "Unknown"} className={statusPillClass(selectedAsset.windows_update)} />
+                        <Badge text={selectedAsset.online_status || "Unknown"} className={statusPillClass(selectedAsset.online_status)} />
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Speed & Performance</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge text={selectedAsset.desktop_loading_speed || "Unknown"} className={statusPillClass(selectedAsset.desktop_loading_speed)} />
+                        <Badge text={selectedAsset.booting_speed || "Unknown"} className={statusPillClass(selectedAsset.booting_speed)} />
+                        <Badge text={selectedAsset.performance || "Unknown"} className={statusPillClass(selectedAsset.performance)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommendation</p>
+                        <p className="mt-2 text-sm font-medium text-slate-800">{selectedAsset.recommendation}</p>
+                      </div>
+                      <HealthIndicator score={selectedAsset.displayScore} />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedAsset.alerts.length > 0 ? (
+                        selectedAsset.alerts.map((alert) => <Badge key={alert} text={alert} className="bg-slate-100 text-slate-700" />)
+                      ) : (
+                        <Badge text="No active alert" className="bg-emerald-100 text-emerald-700" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Peripherals</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        <p>Monitor: {selectedAsset.monitor || "-"}</p>
+                        <p>Keyboard: {selectedAsset.keyboard || "-"}</p>
+                        <p>Mouse: {selectedAsset.mouse || "-"}</p>
+                        <p>MS Office: {selectedAsset.ms_office || "-"}</p>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Other Details</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        <p>Condition: {selectedAsset.condition || "-"}</p>
+                        <p>Status: {selectedAsset.status || "-"}</p>
+                        <p>Purchase: {formatDate(selectedAsset.purchase_date)}</p>
+                        <p>Warranty: {formatDate(selectedAsset.warranty_expiry)}</p>
+                        <p>Last Audit: {formatDateTime(selectedAsset.lastAudit?.created_at)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <button type="button" onClick={() => fillAssetForm(selectedAsset)} className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
+                      Edit Asset
+                    </button>
+                    <button type="button" onClick={() => openAuditForAsset(selectedAsset)} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white">
+                      New Audit
+                    </button>
+                    <button type="button" onClick={() => handleDeleteAsset(selectedAsset.id)} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
+                      Delete Asset
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : null}
+
+            {(activeTab === "inventory" || editingAssetId !== null) && (
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <SectionTitle
+                  title={editingAssetId ? "Edit asset record" : "Add new asset"}
+                  subtitle="This form captures both inventory details and technical device information from your Excel sheet."
+                />
+                <form onSubmit={handleSaveAsset} className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Asset Tag" value={assetForm.assetTag} onChange={(e) => setAssetForm({ ...assetForm, assetTag: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Computer Name / Item Name" value={assetForm.itemName} onChange={(e) => setAssetForm({ ...assetForm, itemName: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Device Type" value={assetForm.category} onChange={(e) => setAssetForm({ ...assetForm, category: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Assigned To" value={assetForm.assignedTo} onChange={(e) => setAssetForm({ ...assetForm, assignedTo: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Brand" value={assetForm.brand} onChange={(e) => setAssetForm({ ...assetForm, brand: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Model" value={assetForm.model} onChange={(e) => setAssetForm({ ...assetForm, model: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Serial Number" value={assetForm.serialNumber} onChange={(e) => setAssetForm({ ...assetForm, serialNumber: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Location / Department" value={assetForm.location} onChange={(e) => setAssetForm({ ...assetForm, location: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Quantity" value={assetForm.quantity} onChange={(e) => setAssetForm({ ...assetForm, quantity: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Supplier" value={assetForm.supplier} onChange={(e) => setAssetForm({ ...assetForm, supplier: e.target.value })} />
+                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.condition} onChange={(e) => setAssetForm({ ...assetForm, condition: e.target.value as AssetCondition })}>
+                      <option>Good</option><option>Fair</option><option>Damaged</option>
+                    </select>
+                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.status} onChange={(e) => setAssetForm({ ...assetForm, status: e.target.value as AssetStatus })}>
+                      <option>In Store</option><option>In Use</option><option>Under Repair</option><option>Damaged</option><option>Lost</option><option>Retired</option>
+                    </select>
+                    <input type="date" className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.purchaseDate} onChange={(e) => setAssetForm({ ...assetForm, purchaseDate: e.target.value })} />
+                    <input type="date" className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.warrantyExpiry} onChange={(e) => setAssetForm({ ...assetForm, warrantyExpiry: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="OS" value={assetForm.os} onChange={(e) => setAssetForm({ ...assetForm, os: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="RAM" value={assetForm.ram} onChange={(e) => setAssetForm({ ...assetForm, ram: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="System Type" value={assetForm.systemType} onChange={(e) => setAssetForm({ ...assetForm, systemType: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Connection Type" value={assetForm.connectionType} onChange={(e) => setAssetForm({ ...assetForm, connectionType: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="MS Office" value={assetForm.msOffice} onChange={(e) => setAssetForm({ ...assetForm, msOffice: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Monitor" value={assetForm.monitor} onChange={(e) => setAssetForm({ ...assetForm, monitor: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Keyboard" value={assetForm.keyboard} onChange={(e) => setAssetForm({ ...assetForm, keyboard: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Mouse" value={assetForm.mouse} onChange={(e) => setAssetForm({ ...assetForm, mouse: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Storage" value={assetForm.storage} onChange={(e) => setAssetForm({ ...assetForm, storage: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Online Status" value={assetForm.onlineStatus} onChange={(e) => setAssetForm({ ...assetForm, onlineStatus: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Windows Update" value={assetForm.windowsUpdate} onChange={(e) => setAssetForm({ ...assetForm, windowsUpdate: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Desktop Loading Speed" value={assetForm.desktopLoadingSpeed} onChange={(e) => setAssetForm({ ...assetForm, desktopLoadingSpeed: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Booting Speed" value={assetForm.bootingSpeed} onChange={(e) => setAssetForm({ ...assetForm, bootingSpeed: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Performance" value={assetForm.performance} onChange={(e) => setAssetForm({ ...assetForm, performance: e.target.value })} />
+                  </div>
+                  <textarea className="min-h-[100px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Notes" value={assetForm.notes} onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })} />
+                  <div className="flex flex-wrap gap-3">
+                    <button type="submit" className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
+                      {savingAsset ? "Saving..." : editingAssetId ? "Update Asset" : "Save Asset"}
+                    </button>
+                    {editingAssetId ? (
+                      <button type="button" onClick={resetAssetForm} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
+                        Cancel Edit
+                      </button>
+                    ) : null}
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {activeTab === "audit" && (
+              <div className="rounded-3xl bg-white p-5 shadow-sm">
+                <SectionTitle title="Quick audit form" subtitle="Save an audit result for the selected asset." />
+                <form onSubmit={handleSaveAudit} className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.assetId} onChange={(e) => setAuditForm({ ...auditForm, assetId: e.target.value })}>
+                      <option value="">Select Asset</option>
+                      {assets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>{asset.asset_tag} - {asset.item_name}</option>
+                      ))}
+                    </select>
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Inspected By" value={auditForm.inspectedBy} onChange={(e) => setAuditForm({ ...auditForm, inspectedBy: e.target.value })} />
+                    <input type="date" className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.inspectionDate} onChange={(e) => setAuditForm({ ...auditForm, inspectionDate: e.target.value })} />
+                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.division} onChange={(e) => setAuditForm({ ...auditForm, division: e.target.value, department: "" })}>
+                      <option value="">Select Division</option>
+                      {DIVISIONS.map((division) => <option key={division} value={division}>{division}</option>)}
+                    </select>
+                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.department} onChange={(e) => setAuditForm({ ...auditForm, department: e.target.value })}>
+                      <option value="">Select Department</option>
+                      {(DEPARTMENTS_BY_DIVISION[auditForm.division] || []).map((department) => (
+                        <option key={department} value={department}>{department}</option>
+                      ))}
+                    </select>
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Office / Area" value={auditForm.officeArea} onChange={(e) => setAuditForm({ ...auditForm, officeArea: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Assigned Role" value={auditForm.assignedRole} onChange={(e) => setAuditForm({ ...auditForm, assignedRole: e.target.value })} />
+                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.priorityLevel} onChange={(e) => setAuditForm({ ...auditForm, priorityLevel: e.target.value as PriorityLevel })}>
+                      <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+                    </select>
+                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.finalStatus} onChange={(e) => setAuditForm({ ...auditForm, finalStatus: e.target.value as FinalStatus })}>
+                      <option>Operational</option><option>Needs Minor Repair</option><option>Needs Major Repair</option><option>Out of Service</option>
+                    </select>
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Health Score" value={auditForm.healthScore} onChange={(e) => setAuditForm({ ...auditForm, healthScore: e.target.value })} />
+                    <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                      <input type="checkbox" checked={auditForm.issueDetected} onChange={(e) => setAuditForm({ ...auditForm, issueDetected: e.target.checked })} />
+                      Issue detected
+                    </label>
+                  </div>
+                  <textarea className="min-h-[100px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Audit remarks" value={auditForm.remarks} onChange={(e) => setAuditForm({ ...auditForm, remarks: e.target.value })} />
+                  <button type="submit" className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white">
+                    {savingAudit ? "Saving..." : "Save Audit"}
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         </div>
-
-        {selectedCheck ? (
-          <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="text-2xl font-bold">{selectedCheck.asset_tag || "-"}</h2>
-                <p className="text-sm text-slate-500">
-                  {selectedCheck.division || "-"} / {selectedCheck.department || "-"} / {selectedCheck.office_area || "-"}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCheckId(null)}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
-                >
-                  Close
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteAudit(selectedCheck.id)}
-                  className="rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white"
-                >
-                  Delete Audit
-                </button>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Inspector</p>
-                <p className="mt-1 text-sm text-slate-900">{selectedCheck.inspected_by}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assigned Role</p>
-                <p className="mt-1 text-sm text-slate-900">{selectedCheck.assigned_role || "-"}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Priority</p>
-                <p className="mt-1 text-sm text-slate-900">{selectedCheck.priority_level || "-"}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saved</p>
-                <p className="mt-1 text-sm text-slate-900">{formatDateTime(selectedCheck.created_at)}</p>
-              </div>
-            </div>
-
-            <div className="mt-6 space-y-4">
-              <div>
-                <h3 className="text-lg font-bold">Hardware</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <DetailPill ok={selectedCheck.monitor_ok} label="Monitor" />
-                  <DetailPill ok={selectedCheck.keyboard_ok} label="Keyboard" />
-                  <DetailPill ok={selectedCheck.mouse_ok} label="Mouse" />
-                  <DetailPill ok={selectedCheck.cpu_ok} label="CPU" />
-                  <DetailPill ok={selectedCheck.ports_ok} label="Ports" />
-                  <DetailPill ok={selectedCheck.cables_ok} label="Cables" />
-                  <DetailPill ok={selectedCheck.cleanliness_ok} label="Cleanliness" />
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-bold">System Health</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <DetailPill ok={selectedCheck.power_on_ok} label="Power" />
-                  <DetailPill ok={selectedCheck.boot_ok} label="Boot" />
-                  <DetailPill ok={selectedCheck.noise_ok} label="Noise" />
-                  <DetailPill ok={selectedCheck.overheating_ok} label="Temperature" />
-                  <DetailPill ok={selectedCheck.performance_ok} label="Performance" />
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-bold">Software & Security</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <DetailPill ok={selectedCheck.os_ok} label="OS" />
-                  <DetailPill ok={selectedCheck.windows_activated_ok} label="Windows Activated" />
-                  <DetailPill ok={selectedCheck.windows_updated_ok} label="Windows Updated" />
-                  <DetailPill ok={selectedCheck.antivirus_installed_ok} label="Antivirus Installed" />
-                  <DetailPill ok={selectedCheck.antivirus_updated_ok} label="Antivirus Updated" />
-                  <DetailPill ok={selectedCheck.virus_free_ok} label="Virus Free" />
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-bold">Applications</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <DetailPill ok={selectedCheck.office_installed_ok} label="Office Installed" />
-                  <DetailPill ok={selectedCheck.office_activated_ok} label="Office Activated" />
-                  <DetailPill ok={selectedCheck.browser_ok} label="Browser" />
-                  <DetailPill ok={selectedCheck.pdf_reader_ok} label="PDF Reader" />
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-bold">Network</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <DetailPill ok={selectedCheck.internet_ok} label="Internet" />
-                  <DetailPill ok={selectedCheck.lan_ok} label="LAN" />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <h3 className="text-lg font-bold">Remarks</h3>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                {selectedCheck.remarks || "No remarks added."}
-              </p>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );
