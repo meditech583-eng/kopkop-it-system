@@ -395,10 +395,6 @@ function computeAssetHealth(asset: ITAsset, audit?: DeviceStatusCheck | null) {
   return { score, label, alerts };
 }
 
-function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function buildQrUrl(value: string) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(value)}`;
 }
@@ -612,7 +608,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [performanceFilter, setPerformanceFilter] = useState("All");
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "scan" | "labels" | "maintenance" | "audit" | "history">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "profile" | "scan" | "labels" | "maintenance" | "audit" | "history">("dashboard");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const [scannerSupported, setScannerSupported] = useState(false);
@@ -625,6 +621,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
+  const profileSectionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     refreshAll(false);
@@ -752,6 +749,47 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     return map;
   }, [enrichedAssets]);
 
+  const selectedAssetAudits = useMemo(() => {
+    if (!selectedAsset) return [];
+    return deviceChecks.filter((check) => check.asset_id === selectedAsset.id);
+  }, [deviceChecks, selectedAsset]);
+
+  const selectedAssetMaintenance = useMemo(() => {
+    if (!selectedAsset) return [];
+    return maintenanceRecords.filter((record) => record.asset_id === selectedAsset.id);
+  }, [maintenanceRecords, selectedAsset]);
+
+  const selectedAssetTimeline = useMemo(() => {
+    if (!selectedAsset) return [];
+    const auditItems = selectedAssetAudits.map((check) => ({
+      id: `audit-${check.id}`,
+      type: "Audit" as const,
+      date: check.created_at || check.inspection_date,
+      title: `${check.final_status} audit`,
+      subtitle: `${check.inspected_by} · Score ${check.health_score ?? 0}%`,
+      notes: check.remarks || "No remarks recorded.",
+      toneClass: statusPillClass(check.final_status),
+    }));
+
+    const maintenanceItems = selectedAssetMaintenance.map((record) => ({
+      id: `maintenance-${record.id}`,
+      type: "Maintenance" as const,
+      date: record.updated_at || record.created_at || record.date_reported,
+      title: record.issue || "Maintenance ticket",
+      subtitle: `${record.status || "Open"} · ${record.priority || "Medium"} priority`,
+      notes:
+        record.resolution_notes ||
+        record.action_taken ||
+        record.notes ||
+        "No maintenance notes recorded.",
+      toneClass: statusPillClass(record.status || "Open"),
+    }));
+
+    return [...auditItems, ...maintenanceItems].sort(
+      (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+    );
+  }, [selectedAsset, selectedAssetAudits, selectedAssetMaintenance]);
+
   const filteredMaintenanceRecords = useMemo(() => {
     const term = maintenanceSearch.trim().toLowerCase();
     return maintenanceRecords.filter((record) => {
@@ -844,6 +882,14 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     [assets]
   );
 
+  function openDeviceProfile(assetId: number) {
+    setSelectedAssetId(assetId);
+    setActiveTab("profile");
+    window.setTimeout(() => {
+      profileSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+  }
+
   function findAssetByCode(code: string) {
     const normalized = code.trim().toLowerCase();
     return enrichedAssets.find(
@@ -861,7 +907,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     }
     setManualScanCode(code);
     setSelectedAssetId(matched.id);
-    setActiveTab("inventory");
+    setActiveTab("profile");
     setScannerStatus(`Matched ${matched.asset_tag} - ${matched.item_name}`);
     stopScanner();
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1051,126 +1097,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function getOpenMaintenanceCount(assetId: number) {
-    const { count, error } = await supabase
-      .from("maintenance_records")
-      .select("id", { count: "exact", head: true })
-      .eq("asset_id", assetId)
-      .in("status", ["Open", "In Progress", "Waiting for Parts"]);
-
-    if (error) throw error;
-    return count || 0;
-  }
-
-  async function calculateDynamicHealthScore(asset: ITAsset, fallbackScore?: number | null) {
-    const baseScore = typeof fallbackScore === "number" ? fallbackScore : inferHealthScore(asset);
-    const openMaintenanceCount = await getOpenMaintenanceCount(asset.id);
-
-    let nextScore = baseScore - openMaintenanceCount * 20;
-    if ((asset.condition || "").toLowerCase() === "damaged") nextScore -= 10;
-
-    return Math.max(0, Math.min(100, nextScore));
-  }
-
-  async function upsertAuditForAssetDay(
-    asset: ITAsset,
-    inspectionDate: string,
-    payload: {
-      inspected_by: string;
-      division: string | null;
-      department: string | null;
-      office_area: string | null;
-      assigned_role: string | null;
-      issue_detected: boolean;
-      priority_level: PriorityLevel;
-      final_status: FinalStatus;
-      health_score: number;
-      remarks: string | null;
-    }
-  ) {
-    const { data: existingAudit, error: existingAuditError } = await supabase
-      .from("device_status_checks")
-      .select("id")
-      .eq("asset_id", asset.id)
-      .eq("inspection_date", inspectionDate)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingAuditError) throw existingAuditError;
-
-    const auditRow = {
-      asset_id: asset.id,
-      asset_tag: asset.asset_tag,
-      item_name: asset.item_name,
-      category: asset.category,
-      location: asset.location,
-      assigned_to: asset.assigned_to,
-      inspection_date: inspectionDate,
-      ...payload,
-    };
-
-    if (existingAudit?.id) {
-      const { error } = await supabase
-        .from("device_status_checks")
-        .update(auditRow)
-        .eq("id", existingAudit.id);
-      if (error) throw error;
-      return "updated" as const;
-    }
-
-    const { error } = await supabase.from("device_status_checks").insert([auditRow]);
-    if (error) throw error;
-    return "inserted" as const;
-  }
-
-  async function syncAuditAndHealthForAsset(
-    assetId: number,
-    options?: {
-      inspectedBy?: string;
-      inspectionDate?: string;
-      remarks?: string | null;
-      issueDetected?: boolean;
-      priorityLevel?: PriorityLevel;
-      finalStatus?: FinalStatus;
-      fallbackScore?: number | null;
-    }
-  ) {
-    const asset = assets.find((item) => item.id === assetId);
-    if (!asset) return { score: 0, auditAction: "skipped" as const };
-
-    const inspectionDate = options?.inspectionDate || todayIsoDate();
-    const score = await calculateDynamicHealthScore(asset, options?.fallbackScore ?? null);
-    const healthLabel = getHealthLabel(score);
-    const autoRemarks = options?.remarks?.trim()
-      ? options.remarks.trim()
-      : `System recalculated health score to ${score}% based on current maintenance state.`;
-
-    const auditAction = await upsertAuditForAssetDay(asset, inspectionDate, {
-      inspected_by: options?.inspectedBy || "System Auto Update",
-      division: null,
-      department: asset.location || null,
-      office_area: asset.location || null,
-      assigned_role: asset.assigned_to || null,
-      issue_detected: options?.issueDetected ?? score < 85,
-      priority_level:
-        options?.priorityLevel ||
-        (score < 40 ? "Critical" : score < 65 ? "High" : score < 85 ? "Medium" : "Low"),
-      final_status:
-        options?.finalStatus ||
-        (score < 40
-          ? "Out of Service"
-          : score < 65
-          ? "Needs Major Repair"
-          : score < 85
-          ? "Needs Minor Repair"
-          : "Operational"),
-      health_score: score,
-      remarks: `${autoRemarks}${healthLabel ? ` | Health: ${healthLabel}` : ""}`,
-    });
-
-    return { score, auditAction };
-  }
 
   async function ensureAutoMaintenanceTicket(
     asset: ITAsset,
@@ -1352,30 +1278,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       if (error) throw error;
 
       await syncAssetStatusForMaintenance(record.asset_id, status, record.previous_asset_status);
-
-      if (record.asset_id) {
-        await syncAuditAndHealthForAsset(record.asset_id, {
-          inspectedBy: "System Auto Update",
-          inspectionDate: todayIsoDate(),
-          remarks:
-            status === "Completed"
-              ? `Maintenance completed. Action taken: ${updates.action_taken || record.action_taken || "N/A"}. Resolution: ${updates.resolution_notes || record.resolution_notes || "N/A"}`
-              : status === "Cancelled"
-              ? "Maintenance ticket cancelled."
-              : `Maintenance ticket moved to ${status}.`,
-          issueDetected: status !== "Completed" && status !== "Cancelled",
-          priorityLevel: record.priority || "Medium",
-          finalStatus:
-            status === "Completed"
-              ? "Operational"
-              : status === "Cancelled"
-              ? "Operational"
-              : record.priority === "Critical" || record.priority === "High"
-              ? "Needs Major Repair"
-              : "Needs Minor Repair",
-        });
-      }
-
       await refreshAll(false);
     } catch (error) {
       console.error(error);
@@ -1549,10 +1451,15 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
     setSavingAudit(true);
     try {
-      const recalculatedScore = await calculateDynamicHealthScore(asset, safeNumber(auditForm.healthScore));
-
-      const auditAction = await upsertAuditForAssetDay(asset, auditForm.inspectionDate, {
+      const payload = {
+        asset_id: asset.id,
+        asset_tag: asset.asset_tag,
+        item_name: asset.item_name,
+        category: asset.category,
+        location: asset.location,
+        assigned_to: asset.assigned_to,
         inspected_by: auditForm.inspectedBy.trim(),
+        inspection_date: auditForm.inspectionDate,
         division: auditForm.division || null,
         department: auditForm.department || null,
         office_area: auditForm.officeArea || null,
@@ -1560,13 +1467,15 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
         issue_detected: auditForm.issueDetected,
         priority_level: auditForm.priorityLevel,
         final_status: auditForm.finalStatus,
-        health_score: recalculatedScore,
+        health_score: safeNumber(auditForm.healthScore),
         remarks: auditForm.remarks.trim() || null,
-      });
+      };
+      const { error } = await supabase.from("device_status_checks").insert([payload]);
+      if (error) throw error;
 
       const autoTriggered = await ensureAutoMaintenanceTicket(
         asset,
-        recalculatedScore,
+        safeNumber(auditForm.healthScore),
         auditForm.remarks
       );
 
@@ -1575,9 +1484,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       setActiveTab("history");
       alert(
         autoTriggered
-          ? `Audit ${auditAction} successfully. A critical maintenance ticket was created automatically.`
-          : auditAction === "updated"
-          ? "Audit updated successfully for this device and date."
+          ? "Audit saved successfully. A critical maintenance ticket was created automatically."
           : "Audit saved successfully."
       );
     } catch (error) {
@@ -1971,6 +1878,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           {[
             ["dashboard", "Dashboard"],
             ["inventory", "Inventory"],
+            ["profile", "Device Profile"],
             ["scan", "Scan Device"],
             ["labels", "QR Labels"],
             ["maintenance", "Maintenance"],
@@ -2478,7 +2386,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
               </div>
             </div>
 
-            {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan" || activeTab === "labels") && (
+            {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "profile" || activeTab === "scan" || activeTab === "labels") && (
               <div className="rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Inventory overview" subtitle="Select a device to review its specs, condition, update status, and recommendation." />
                 <div className="overflow-hidden rounded-3xl border border-slate-200">
@@ -2518,8 +2426,12 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-2">
-                                <button type="button" onClick={() => setSelectedAssetId(asset.id)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
-                                  View
+                                <button
+                                  type="button"
+                                  onClick={() => openDeviceProfile(asset.id)}
+                                  className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
+                                >
+                                  View Profile
                                 </button>
                                 <button type="button" onClick={() => fillAssetForm(asset)} className="rounded-xl bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-700">
                                   Edit
@@ -2543,6 +2455,152 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                         ) : null}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "profile" && selectedAsset && (
+              <div ref={profileSectionRef} className="space-y-6">
+                <div className="rounded-3xl bg-white p-5 shadow-sm">
+                  <SectionTitle title="Device profile workspace" subtitle="Complete view of one asset with health, audits, maintenance history, and activity timeline." />
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    <div className="rounded-3xl bg-slate-950 p-5 text-white xl:col-span-2">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">{selectedAsset.asset_tag}</p>
+                          <h3 className="mt-2 text-3xl font-bold">{selectedAsset.item_name}</h3>
+                          <p className="mt-2 text-sm text-slate-300">
+                            {selectedAsset.brand || "-"} {selectedAsset.model || ""} · Serial: {selectedAsset.serial_number || "Not recorded"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <HealthIndicator score={selectedAsset.displayScore} />
+                          <Badge text={selectedAsset.status || "-"} className={statusPillClass(selectedAsset.status)} />
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl bg-white/5 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">Assigned user</p>
+                          <p className="mt-2 font-semibold text-white">{selectedAsset.assigned_to || "Unassigned"}</p>
+                          <p className="mt-1 text-sm text-slate-300">{selectedAsset.location || "No location"}</p>
+                        </div>
+                        <div className="rounded-2xl bg-white/5 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">System details</p>
+                          <p className="mt-2 font-semibold text-white">{selectedAsset.os || "Not recorded"}</p>
+                          <p className="mt-1 text-sm text-slate-300">{selectedAsset.ram || "No RAM"} · {selectedAsset.storage || "No storage"}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 p-5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Health summary</p>
+                      <div className="mt-3 flex items-center justify-between">
+                        <p className="text-4xl font-bold text-slate-900">{selectedAsset.displayScore}%</p>
+                        <HealthIndicator score={selectedAsset.displayScore} />
+                      </div>
+                      <p className="mt-4 text-sm font-medium text-slate-800">{selectedAsset.recommendation}</p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {selectedAsset.alerts.length > 0 ? (
+                          selectedAsset.alerts.map((alert) => (
+                            <Badge key={alert} text={alert} className="bg-slate-100 text-slate-700" />
+                          ))
+                        ) : (
+                          <Badge text="No active alerts" className="bg-emerald-100 text-emerald-700" />
+                        )}
+                      </div>
+                      <div className="mt-5 grid gap-3">
+                        <button type="button" onClick={() => openAuditForAsset(selectedAsset)} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white">
+                          New Audit
+                        </button>
+                        <button type="button" onClick={() => createMaintenance(selectedAsset)} className="rounded-2xl bg-red-500 px-4 py-3 text-sm font-semibold text-white">
+                          Create Maintenance
+                        </button>
+                        <button type="button" onClick={() => setActiveTab("labels")} className="rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white">
+                          Open QR Label
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <div className="rounded-3xl bg-white p-5 shadow-sm">
+                    <SectionTitle title="Audit history" subtitle="All audits recorded for this device." />
+                    <div className="space-y-3">
+                      {selectedAssetAudits.length === 0 ? (
+                        <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No audit records for this device yet.</div>
+                      ) : (
+                        selectedAssetAudits.map((check) => (
+                          <div key={check.id} className="rounded-2xl border border-slate-200 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="font-semibold text-slate-900">{check.final_status}</p>
+                                <p className="mt-1 text-sm text-slate-500">{formatDate(check.inspection_date)} · {check.inspected_by}</p>
+                                <p className="mt-2 text-sm text-slate-600">{check.remarks || "No remarks recorded."}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Badge text={check.priority_level || "Low"} className={statusPillClass(check.priority_level)} />
+                                <Badge text={`${check.health_score ?? 0}%`} className={scoreTone(check.health_score ?? 0)} />
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl bg-white p-5 shadow-sm">
+                    <SectionTitle title="Maintenance history" subtitle="Repair and maintenance tickets linked to this device." />
+                    <div className="space-y-3">
+                      {selectedAssetMaintenance.length === 0 ? (
+                        <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No maintenance records for this device yet.</div>
+                      ) : (
+                        selectedAssetMaintenance.map((record) => (
+                          <div key={record.id} className="rounded-2xl border border-slate-200 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="font-semibold text-slate-900">{record.issue || "Maintenance ticket"}</p>
+                                <p className="mt-1 text-sm text-slate-500">
+                                  {formatDate(record.date_reported)} · {record.technician || record.reported_by || "No technician"}
+                                </p>
+                                <p className="mt-2 text-sm text-slate-600">
+                                  {record.resolution_notes || record.action_taken || record.notes || "No notes recorded."}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Badge text={record.status || "Open"} className={statusPillClass(record.status || "Open")} />
+                                <Badge text={record.priority || "Medium"} className={statusPillClass(record.priority || "Medium")} />
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-white p-5 shadow-sm">
+                  <SectionTitle title="Activity timeline" subtitle="Newest device activity first across audits and maintenance records." />
+                  <div className="space-y-3">
+                    {selectedAssetTimeline.length === 0 ? (
+                      <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No activity yet for this device.</div>
+                    ) : (
+                      selectedAssetTimeline.map((item) => (
+                        <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{item.type} · {item.title}</p>
+                              <p className="mt-1 text-sm text-slate-500">{formatDateTime(item.date)}</p>
+                              <p className="mt-2 text-sm text-slate-700">{item.subtitle}</p>
+                              <p className="mt-2 text-sm text-slate-600">{item.notes}</p>
+                            </div>
+                            <Badge text={item.type} className={item.toneClass} />
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -2578,108 +2636,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           </div>
 
           <div className="space-y-6">
-            {selectedAsset && (activeTab === "dashboard" || activeTab === "inventory" || activeTab === "scan" || activeTab === "labels") ? (
-              <div className="rounded-3xl bg-white p-5 shadow-sm">
-                <SectionTitle title="Selected device profile" subtitle="Detailed asset record with technical data and management recommendation." />
-                <div className="space-y-4">
-                  <div className="rounded-3xl bg-slate-950 p-5 text-white">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">{selectedAsset.asset_tag}</p>
-                        <h3 className="mt-2 text-2xl font-bold">{selectedAsset.item_name}</h3>
-                        <p className="mt-1 text-sm text-slate-300">{selectedAsset.brand || "-"} {selectedAsset.model || ""}</p>
-                      </div>
-                      <HealthIndicator score={selectedAsset.displayScore} />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">User / Location</p>
-                      <p className="mt-2 font-semibold text-slate-900">{selectedAsset.assigned_to || "Unassigned"}</p>
-                      <p className="mt-1 text-sm text-slate-600">{selectedAsset.location || "No location"}</p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">System</p>
-                      <p className="mt-2 font-semibold text-slate-900">{selectedAsset.os || "Not recorded"}</p>
-                      <p className="mt-1 text-sm text-slate-600">{selectedAsset.ram || "No RAM"} · {selectedAsset.storage || "No storage"}</p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Update & Connectivity</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Badge text={selectedAsset.windows_update || "Unknown"} className={statusPillClass(selectedAsset.windows_update)} />
-                        <Badge text={selectedAsset.online_status || "Unknown"} className={statusPillClass(selectedAsset.online_status)} />
-                      </div>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Speed & Performance</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Badge text={selectedAsset.desktop_loading_speed || "Unknown"} className={statusPillClass(selectedAsset.desktop_loading_speed)} />
-                        <Badge text={selectedAsset.booting_speed || "Unknown"} className={statusPillClass(selectedAsset.booting_speed)} />
-                        <Badge text={selectedAsset.performance || "Unknown"} className={statusPillClass(selectedAsset.performance)} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommendation</p>
-                        <p className="mt-2 text-sm font-medium text-slate-800">{selectedAsset.recommendation}</p>
-                      </div>
-                      <HealthIndicator score={selectedAsset.displayScore} />
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {selectedAsset.alerts.length > 0 ? (
-                        selectedAsset.alerts.map((alert) => <Badge key={alert} text={alert} className="bg-slate-100 text-slate-700" />)
-                      ) : (
-                        <Badge text="No active alert" className="bg-emerald-100 text-emerald-700" />
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Peripherals</p>
-                      <div className="mt-3 space-y-2 text-sm text-slate-700">
-                        <p>Monitor: {selectedAsset.monitor || "-"}</p>
-                        <p>Keyboard: {selectedAsset.keyboard || "-"}</p>
-                        <p>Mouse: {selectedAsset.mouse || "-"}</p>
-                        <p>MS Office: {selectedAsset.ms_office || "-"}</p>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Other Details</p>
-                      <div className="mt-3 space-y-2 text-sm text-slate-700">
-                        <p>Condition: {selectedAsset.condition || "-"}</p>
-                        <p>Status: {selectedAsset.status || "-"}</p>
-                        <p>Purchase: {formatDate(selectedAsset.purchase_date)}</p>
-                        <p>Warranty: {formatDate(selectedAsset.warranty_expiry)}</p>
-                        <p>Last Audit: {formatDateTime(selectedAsset.lastAudit?.created_at)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    <button type="button" onClick={() => fillAssetForm(selectedAsset)} className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
-                      Edit Asset
-                    </button>
-                    <button type="button" onClick={() => openAuditForAsset(selectedAsset)} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white">
-                      New Audit
-                    </button>
-                    <button type="button" onClick={() => setActiveTab("labels")} className="rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white">
-                      Open QR Label
-                    </button>
-                    <button type="button" onClick={() => createMaintenance(selectedAsset)} className="rounded-2xl bg-red-500 px-4 py-3 text-sm font-semibold text-white">
-                      Create Repair
-                    </button>
-                    <button type="button" onClick={() => handleDeleteAsset(selectedAsset.id)} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
-                      Delete Asset
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
 
             {(activeTab === "inventory" || editingAssetId !== null) && (
               <div className="rounded-3xl bg-white p-5 shadow-sm">
