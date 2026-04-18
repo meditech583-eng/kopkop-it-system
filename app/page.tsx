@@ -58,6 +58,8 @@ type ITAsset = {
   monitor: string | null;
   keyboard: string | null;
   mouse: string | null;
+  charger: string | null;
+  headset: string | null;
   storage: string | null;
   online_status: string | null;
   windows_update: string | null;
@@ -160,6 +162,8 @@ type AssetFormState = {
   monitor: string;
   keyboard: string;
   mouse: string;
+  charger: string;
+  headset: string;
   storage: string;
   onlineStatus: string;
   windowsUpdate: string;
@@ -215,6 +219,8 @@ const EMPTY_ASSET_FORM: AssetFormState = {
   monitor: "",
   keyboard: "",
   mouse: "",
+  charger: "",
+  headset: "",
   storage: "",
   onlineStatus: "",
   windowsUpdate: "",
@@ -1329,6 +1335,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       monitor: asset.monitor || "",
       keyboard: asset.keyboard || "",
       mouse: asset.mouse || "",
+      charger: (asset as any).charger || "",
+      headset: (asset as any).headset || "",
       storage: asset.storage || "",
       onlineStatus: asset.online_status || "",
       windowsUpdate: asset.windows_update || "",
@@ -1377,6 +1385,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       monitor: assetForm.monitor.trim() || null,
       keyboard: assetForm.keyboard.trim() || null,
       mouse: assetForm.mouse.trim() || null,
+      charger: assetForm.charger.trim() || null,
+      headset: assetForm.headset.trim() || null,
       storage: assetForm.storage.trim() || null,
       online_status: assetForm.onlineStatus.trim() || null,
       windows_update: assetForm.windowsUpdate.trim() || null,
@@ -2527,6 +2537,89 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
                 <div className="grid gap-6 xl:grid-cols-2">
                   <div className="rounded-3xl bg-white p-5 shadow-sm">
+                    <SectionTitle title="Device details" subtitle="Core asset information, technical specs, and management details." />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Asset information</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">Asset Tag:</span> {selectedAsset.asset_tag}</p>
+                          <p><span className="font-semibold text-slate-900">Computer Name:</span> {selectedAsset.item_name}</p>
+                          <p><span className="font-semibold text-slate-900">Category:</span> {selectedAsset.category || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Brand / Model:</span> {selectedAsset.brand || "-"} {selectedAsset.model || ""}</p>
+                          <p><span className="font-semibold text-slate-900">Serial Number:</span> {selectedAsset.serial_number || "Not recorded"}</p>
+                          <p><span className="font-semibold text-slate-900">Condition:</span> {selectedAsset.condition || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Status:</span> {selectedAsset.status || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Quantity:</span> {selectedAsset.quantity || 1}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ownership and dates</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">Assigned To:</span> {selectedAsset.assigned_to || "Unassigned"}</p>
+                          <p><span className="font-semibold text-slate-900">Location:</span> {selectedAsset.location || "No location"}</p>
+                          <p><span className="font-semibold text-slate-900">Supplier:</span> {selectedAsset.supplier || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Purchase Date:</span> {formatDate(selectedAsset.purchase_date)}</p>
+                          <p><span className="font-semibold text-slate-900">Warranty Expiry:</span> {formatDate(selectedAsset.warranty_expiry)}</p>
+                          <p><span className="font-semibold text-slate-900">Created:</span> {formatDateTime(selectedAsset.created_at)}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Technical specs</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">OS:</span> {selectedAsset.os || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">RAM:</span> {selectedAsset.ram || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Storage:</span> {selectedAsset.storage || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">System Type:</span> {selectedAsset.system_type || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Connection:</span> {selectedAsset.connection_type || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">MS Office:</span> {selectedAsset.ms_office || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Monitor:</span> {selectedAsset.monitor || "-"}</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Peripherals and notes</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">Keyboard:</span> {selectedAsset.keyboard || "Not recorded"}</p>
+                          <p><span className="font-semibold text-slate-900">Mouse:</span> {selectedAsset.mouse || "Not recorded"}</p>
+                          <p><span className="font-semibold text-slate-900">Charger:</span> {(selectedAsset as any).charger || "Not recorded"}</p>
+                          <p><span className="font-semibold text-slate-900">Headset:</span> {(selectedAsset as any).headset || "Not recorded"}</p>
+                          <p><span className="font-semibold text-slate-900">Online Status:</span> {selectedAsset.online_status || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Windows Update:</span> {selectedAsset.windows_update || "-"}</p>
+                          <div className="rounded-2xl bg-slate-50 p-3 mt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</p>
+                            <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{selectedAsset.notes || "No notes recorded for this device."}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl bg-white p-5 shadow-sm">
+                    <SectionTitle title="Performance snapshot" subtitle="Current operating condition fields captured for this device." />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Boot and desktop</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">Booting Speed:</span> {selectedAsset.booting_speed || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Desktop Loading:</span> {selectedAsset.desktop_loading_speed || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Performance:</span> {selectedAsset.performance || "-"}</p>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Support guidance</p>
+                        <div className="mt-3 space-y-3 text-sm text-slate-700">
+                          <p><span className="font-semibold text-slate-900">Recommendation:</span> {selectedAsset.recommendation}</p>
+                          <p><span className="font-semibold text-slate-900">Alerts:</span> {selectedAsset.alerts.length ? selectedAsset.alerts.join(", ") : "No active alerts"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <div className="rounded-3xl bg-white p-5 shadow-sm">
                     <SectionTitle title="Audit history" subtitle="All audits recorded for this device." />
                     <div className="space-y-3">
                       {selectedAssetAudits.length === 0 ? (
@@ -2671,6 +2764,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Monitor" value={assetForm.monitor} onChange={(e) => setAssetForm({ ...assetForm, monitor: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Keyboard" value={assetForm.keyboard} onChange={(e) => setAssetForm({ ...assetForm, keyboard: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Mouse" value={assetForm.mouse} onChange={(e) => setAssetForm({ ...assetForm, mouse: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Charger" value={assetForm.charger} onChange={(e) => setAssetForm({ ...assetForm, charger: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Headset" value={assetForm.headset} onChange={(e) => setAssetForm({ ...assetForm, headset: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Storage" value={assetForm.storage} onChange={(e) => setAssetForm({ ...assetForm, storage: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Online Status" value={assetForm.onlineStatus} onChange={(e) => setAssetForm({ ...assetForm, onlineStatus: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Windows Update" value={assetForm.windowsUpdate} onChange={(e) => setAssetForm({ ...assetForm, windowsUpdate: e.target.value })} />
