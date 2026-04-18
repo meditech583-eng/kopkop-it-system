@@ -395,6 +395,10 @@ function computeAssetHealth(asset: ITAsset, audit?: DeviceStatusCheck | null) {
   return { score, label, alerts };
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function buildQrUrl(value: string) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(value)}`;
 }
@@ -1047,6 +1051,126 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  async function getOpenMaintenanceCount(assetId: number) {
+    const { count, error } = await supabase
+      .from("maintenance_records")
+      .select("id", { count: "exact", head: true })
+      .eq("asset_id", assetId)
+      .in("status", ["Open", "In Progress", "Waiting for Parts"]);
+
+    if (error) throw error;
+    return count || 0;
+  }
+
+  async function calculateDynamicHealthScore(asset: ITAsset, fallbackScore?: number | null) {
+    const baseScore = typeof fallbackScore === "number" ? fallbackScore : inferHealthScore(asset);
+    const openMaintenanceCount = await getOpenMaintenanceCount(asset.id);
+
+    let nextScore = baseScore - openMaintenanceCount * 20;
+    if ((asset.condition || "").toLowerCase() === "damaged") nextScore -= 10;
+
+    return Math.max(0, Math.min(100, nextScore));
+  }
+
+  async function upsertAuditForAssetDay(
+    asset: ITAsset,
+    inspectionDate: string,
+    payload: {
+      inspected_by: string;
+      division: string | null;
+      department: string | null;
+      office_area: string | null;
+      assigned_role: string | null;
+      issue_detected: boolean;
+      priority_level: PriorityLevel;
+      final_status: FinalStatus;
+      health_score: number;
+      remarks: string | null;
+    }
+  ) {
+    const { data: existingAudit, error: existingAuditError } = await supabase
+      .from("device_status_checks")
+      .select("id")
+      .eq("asset_id", asset.id)
+      .eq("inspection_date", inspectionDate)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingAuditError) throw existingAuditError;
+
+    const auditRow = {
+      asset_id: asset.id,
+      asset_tag: asset.asset_tag,
+      item_name: asset.item_name,
+      category: asset.category,
+      location: asset.location,
+      assigned_to: asset.assigned_to,
+      inspection_date: inspectionDate,
+      ...payload,
+    };
+
+    if (existingAudit?.id) {
+      const { error } = await supabase
+        .from("device_status_checks")
+        .update(auditRow)
+        .eq("id", existingAudit.id);
+      if (error) throw error;
+      return "updated" as const;
+    }
+
+    const { error } = await supabase.from("device_status_checks").insert([auditRow]);
+    if (error) throw error;
+    return "inserted" as const;
+  }
+
+  async function syncAuditAndHealthForAsset(
+    assetId: number,
+    options?: {
+      inspectedBy?: string;
+      inspectionDate?: string;
+      remarks?: string | null;
+      issueDetected?: boolean;
+      priorityLevel?: PriorityLevel;
+      finalStatus?: FinalStatus;
+      fallbackScore?: number | null;
+    }
+  ) {
+    const asset = assets.find((item) => item.id === assetId);
+    if (!asset) return { score: 0, auditAction: "skipped" as const };
+
+    const inspectionDate = options?.inspectionDate || todayIsoDate();
+    const score = await calculateDynamicHealthScore(asset, options?.fallbackScore ?? null);
+    const healthLabel = getHealthLabel(score);
+    const autoRemarks = options?.remarks?.trim()
+      ? options.remarks.trim()
+      : `System recalculated health score to ${score}% based on current maintenance state.`;
+
+    const auditAction = await upsertAuditForAssetDay(asset, inspectionDate, {
+      inspected_by: options?.inspectedBy || "System Auto Update",
+      division: null,
+      department: asset.location || null,
+      office_area: asset.location || null,
+      assigned_role: asset.assigned_to || null,
+      issue_detected: options?.issueDetected ?? score < 85,
+      priority_level:
+        options?.priorityLevel ||
+        (score < 40 ? "Critical" : score < 65 ? "High" : score < 85 ? "Medium" : "Low"),
+      final_status:
+        options?.finalStatus ||
+        (score < 40
+          ? "Out of Service"
+          : score < 65
+          ? "Needs Major Repair"
+          : score < 85
+          ? "Needs Minor Repair"
+          : "Operational"),
+      health_score: score,
+      remarks: `${autoRemarks}${healthLabel ? ` | Health: ${healthLabel}` : ""}`,
+    });
+
+    return { score, auditAction };
+  }
 
   async function ensureAutoMaintenanceTicket(
     asset: ITAsset,
@@ -1228,6 +1352,30 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       if (error) throw error;
 
       await syncAssetStatusForMaintenance(record.asset_id, status, record.previous_asset_status);
+
+      if (record.asset_id) {
+        await syncAuditAndHealthForAsset(record.asset_id, {
+          inspectedBy: "System Auto Update",
+          inspectionDate: todayIsoDate(),
+          remarks:
+            status === "Completed"
+              ? `Maintenance completed. Action taken: ${updates.action_taken || record.action_taken || "N/A"}. Resolution: ${updates.resolution_notes || record.resolution_notes || "N/A"}`
+              : status === "Cancelled"
+              ? "Maintenance ticket cancelled."
+              : `Maintenance ticket moved to ${status}.`,
+          issueDetected: status !== "Completed" && status !== "Cancelled",
+          priorityLevel: record.priority || "Medium",
+          finalStatus:
+            status === "Completed"
+              ? "Operational"
+              : status === "Cancelled"
+              ? "Operational"
+              : record.priority === "Critical" || record.priority === "High"
+              ? "Needs Major Repair"
+              : "Needs Minor Repair",
+        });
+      }
+
       await refreshAll(false);
     } catch (error) {
       console.error(error);
@@ -1401,15 +1549,10 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
     setSavingAudit(true);
     try {
-      const payload = {
-        asset_id: asset.id,
-        asset_tag: asset.asset_tag,
-        item_name: asset.item_name,
-        category: asset.category,
-        location: asset.location,
-        assigned_to: asset.assigned_to,
+      const recalculatedScore = await calculateDynamicHealthScore(asset, safeNumber(auditForm.healthScore));
+
+      const auditAction = await upsertAuditForAssetDay(asset, auditForm.inspectionDate, {
         inspected_by: auditForm.inspectedBy.trim(),
-        inspection_date: auditForm.inspectionDate,
         division: auditForm.division || null,
         department: auditForm.department || null,
         office_area: auditForm.officeArea || null,
@@ -1417,15 +1560,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
         issue_detected: auditForm.issueDetected,
         priority_level: auditForm.priorityLevel,
         final_status: auditForm.finalStatus,
-        health_score: safeNumber(auditForm.healthScore),
+        health_score: recalculatedScore,
         remarks: auditForm.remarks.trim() || null,
-      };
-      const { error } = await supabase.from("device_status_checks").insert([payload]);
-      if (error) throw error;
+      });
 
       const autoTriggered = await ensureAutoMaintenanceTicket(
         asset,
-        safeNumber(auditForm.healthScore),
+        recalculatedScore,
         auditForm.remarks
       );
 
@@ -1434,7 +1575,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       setActiveTab("history");
       alert(
         autoTriggered
-          ? "Audit saved successfully. A critical maintenance ticket was created automatically."
+          ? `Audit ${auditAction} successfully. A critical maintenance ticket was created automatically.`
+          : auditAction === "updated"
+          ? "Audit updated successfully for this device and date."
           : "Audit saved successfully."
       );
     } catch (error) {
