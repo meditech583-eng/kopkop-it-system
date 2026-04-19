@@ -907,16 +907,16 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
   function handleScannedCode(code: string) {
     const matched = findAssetByCode(code);
+  
     if (!matched) {
       setScannerStatus(`No asset found for code: ${code}`);
       return false;
     }
+  
     setManualScanCode(code);
-    setSelectedAssetId(matched.id);
-    setActiveTab("profile");
     setScannerStatus(`Matched ${matched.asset_tag} - ${matched.item_name}`);
     stopScanner();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    openDeviceProfile(matched.id);
     return true;
   }
 
