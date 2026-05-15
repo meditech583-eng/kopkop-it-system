@@ -28,3 +28,59 @@ body {
 * {
   box-sizing: border-box;
 }
+
+@media print {
+  body {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .print\\:hidden {
+    display: none !important;
+  }
+
+  .print\\:m-0 {
+    margin: 0 !important;
+  }
+
+  .print\\:max-h-none {
+    max-height: none !important;
+  }
+
+  .print\\:max-w-none {
+    max-width: none !important;
+  }
+
+  .print\\:overflow-visible {
+    overflow: visible !important;
+  }
+
+  .print\\:shadow-none {
+    box-shadow: none !important;
+  }
+
+  .print\\:mb-6 {
+    margin-bottom: 1.5rem !important;
+  }
+
+  .print\\:mt-6 {
+    margin-top: 1.5rem !important;
+  }
+
+  @page {
+    margin: 0.5in;
+    size: A4;
+  }
+
+  .rounded-2xl {
+    border-radius: 0 !important;
+  }
+
+  .bg-slate-50 {
+    background-color: white !important;
+  }
+
+  .border-slate-200 {
+    border-color: #e2e8f0 !important;
+  }
+}

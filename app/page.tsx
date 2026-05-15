@@ -621,6 +621,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [performanceFilter, setPerformanceFilter] = useState("All");
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "profile" | "scan" | "labels" | "maintenance" | "audit" | "history">("dashboard");
+  const [printMode, setPrintMode] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const [scannerSupported, setScannerSupported] = useState(false);
@@ -2909,6 +2910,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                         <button type="button" onClick={() => setActiveTab("labels")} className="rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white">
                           Open QR Label
                         </button>
+                        <button type="button" onClick={() => setPrintMode(true)} className="rounded-2xl bg-purple-600 px-4 py-3 text-sm font-semibold text-white">
+                          Print Full Specifications
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -3214,6 +3218,174 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           </div>
         </div>
       </div>
+
+      {printMode && selectedAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="max-h-[90vh] max-w-4xl overflow-auto rounded-3xl bg-white p-8 shadow-2xl print:m-0 print:max-h-none print:max-w-none print:overflow-visible print:shadow-none">
+            <div className="mb-8 border-b-2 border-slate-200 pb-6 print:mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-3xl font-bold text-slate-900">KOPKOP College</h1>
+                  <p className="text-lg text-slate-600">ICT Asset Management System</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-slate-500">Device Specifications Report</p>
+                  <p className="text-sm text-slate-500">Generated: {new Date().toLocaleString()}</p>
+                  <p className="text-sm text-slate-500">By: {user?.email || 'System'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <div className="rounded-2xl bg-slate-50 p-6">
+                <h2 className="mb-4 text-xl font-bold text-slate-900">GENERAL INFORMATION</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div><strong>Device Name:</strong> {selectedAsset.item_name}</div>
+                  <div><strong>Asset ID:</strong> {selectedAsset.asset_tag}</div>
+                  <div><strong>Device Type:</strong> {selectedAsset.category}</div>
+                  <div><strong>Brand:</strong> {selectedAsset.brand || '-'}</div>
+                  <div><strong>Model:</strong> {selectedAsset.model || '-'}</div>
+                  <div><strong>Serial Number:</strong> {selectedAsset.serial_number || 'Not recorded'}</div>
+                  <div><strong>Status:</strong> {selectedAsset.status || '-'}</div>
+                  <div><strong>Assigned User:</strong> {selectedAsset.assigned_to || 'Unassigned'}</div>
+                  <div><strong>Department:</strong> {selectedAsset.location?.split(' - ')[0] || '-'}</div>
+                  <div><strong>Location:</strong> {selectedAsset.location?.split(' - ')[1] || selectedAsset.location || '-'}</div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-6">
+                <h2 className="mb-4 text-xl font-bold text-slate-900">TECHNICAL SPECIFICATIONS</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div><strong>CPU / Processor:</strong> {selectedAsset.system_type || '-'}</div>
+                  <div><strong>RAM:</strong> {selectedAsset.ram || '-'}</div>
+                  <div><strong>Storage:</strong> {selectedAsset.storage || '-'}</div>
+                  <div><strong>GPU:</strong> Not recorded</div>
+                  <div><strong>Operating System:</strong> {selectedAsset.os || '-'}</div>
+                  <div><strong>BIOS Version:</strong> Not recorded</div>
+                  <div><strong>MAC Address:</strong> Not recorded</div>
+                  <div><strong>IP Address:</strong> Not recorded</div>
+                  <div><strong>Screen Size:</strong> {selectedAsset.monitor || '-'}</div>
+                  <div><strong>Battery Health:</strong> Not recorded</div>
+                  <div><strong>Ports / Connectivity:</strong> {selectedAsset.connection_type || '-'}</div>
+                  <div><strong>Installed Software:</strong> {selectedAsset.ms_office || '-'}</div>
+                  <div><strong>Peripheral Devices:</strong> {[
+                    selectedAsset.keyboard && 'Keyboard',
+                    selectedAsset.mouse && 'Mouse',
+                    selectedAsset.charger && 'Charger',
+                    selectedAsset.headset && 'Headset'
+                  ].filter(Boolean).join(', ') || 'None recorded'}</div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-6">
+                <h2 className="mb-4 text-xl font-bold text-slate-900">PURCHASE & WARRANTY</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div><strong>Purchase Date:</strong> {formatDate(selectedAsset.purchase_date)}</div>
+                  <div><strong>Supplier:</strong> {selectedAsset.supplier || '-'}</div>
+                  <div><strong>Warranty Start:</strong> {formatDate(selectedAsset.purchase_date)}</div>
+                  <div><strong>Warranty End:</strong> {formatDate(selectedAsset.warranty_expiry)}</div>
+                  <div><strong>Cost Price:</strong> Not recorded</div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-6">
+                <h2 className="mb-4 text-xl font-bold text-slate-900">PERFORMANCE & HEALTH</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div><strong>Health Score:</strong> {selectedAsset.displayScore}%</div>
+                  <div><strong>Performance:</strong> {selectedAsset.performance || '-'}</div>
+                  <div><strong>Booting Speed:</strong> {selectedAsset.booting_speed || '-'}</div>
+                  <div><strong>Desktop Loading Speed:</strong> {selectedAsset.desktop_loading_speed || '-'}</div>
+                  <div><strong>Online Status:</strong> {selectedAsset.online_status || '-'}</div>
+                  <div><strong>Windows Update:</strong> {selectedAsset.windows_update || '-'}</div>
+                  <div><strong>Recommendation:</strong> {selectedAsset.recommendation}</div>
+                  <div><strong>Alerts:</strong> {selectedAsset.alerts.join(', ') || 'None'}</div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-6">
+                <h2 className="mb-4 text-xl font-bold text-slate-900">AUDIT HISTORY</h2>
+                {selectedAssetAudits.length === 0 ? (
+                  <p className="text-slate-600">No audit records found for this device.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {selectedAssetAudits.map((audit) => (
+                      <div key={audit.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div><strong>Date:</strong> {formatDate(audit.inspection_date)}</div>
+                          <div><strong>Auditor:</strong> {audit.inspected_by}</div>
+                          <div><strong>Status:</strong> {audit.final_status}</div>
+                          <div><strong>Priority:</strong> {audit.priority_level || 'Low'}</div>
+                          <div><strong>Health Score:</strong> {audit.health_score}%</div>
+                          <div><strong>Issue Detected:</strong> {audit.issue_detected ? 'Yes' : 'No'}</div>
+                        </div>
+                        <div className="mt-3">
+                          <strong>Notes:</strong> {audit.remarks || 'No remarks recorded.'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-6">
+                <h2 className="mb-4 text-xl font-bold text-slate-900">MAINTENANCE HISTORY</h2>
+                {selectedAssetMaintenance.length === 0 ? (
+                  <p className="text-slate-600">No maintenance records found for this device.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {selectedAssetMaintenance.map((record) => (
+                      <div key={record.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div><strong>Issue:</strong> {record.issue || 'Maintenance ticket'}</div>
+                          <div><strong>Priority:</strong> {record.priority || 'Medium'}</div>
+                          <div><strong>Status:</strong> {record.status || 'Open'}</div>
+                          <div><strong>Technician:</strong> {record.technician || record.reported_by || 'Not assigned'}</div>
+                          <div><strong>Date Reported:</strong> {formatDate(record.date_reported)}</div>
+                          <div><strong>Repair Date:</strong> {formatDate(record.repair_date)}</div>
+                        </div>
+                        <div className="mt-3">
+                          <strong>Action Taken:</strong> {record.action_taken || record.resolution_notes || record.notes || 'No details recorded.'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-6">
+                <h2 className="mb-4 text-xl font-bold text-slate-900">ADDITIONAL INFORMATION</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div><strong>Notes:</strong></div>
+                  <div className="md:col-span-2 whitespace-pre-wrap">{selectedAsset.notes || 'No additional notes recorded.'}</div>
+                  <div><strong>Attachments:</strong> None</div>
+                  <div><strong>QR Code:</strong> {selectedAsset.asset_tag}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 border-t-2 border-slate-200 pt-6 text-center text-sm text-slate-500 print:mt-6">
+              <p>KOPKOP College ICT Asset Management System</p>
+              <p>Report generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+              <p>Printed by: {user?.email || 'System User'}</p>
+            </div>
+
+            <div className="mt-6 flex justify-center gap-4 print:hidden">
+              <button
+                onClick={() => window.print()}
+                className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white"
+              >
+                Print Report
+              </button>
+              <button
+                onClick={() => setPrintMode(false)}
+                className="rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
