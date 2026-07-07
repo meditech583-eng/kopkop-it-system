@@ -1294,10 +1294,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   }
 
   async function startScanner() {
-    if (!scannerSupported) {
-      setScannerStatus("Camera scanner is not available. Please check browser permissions or use manual scan.");
-      return;
-    }
+  setScannerSupported(true);
 
     try {
       stopScanner();
