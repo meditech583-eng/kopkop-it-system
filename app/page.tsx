@@ -12,6 +12,12 @@ declare global {
       };
       getSupportedFormats?: () => Promise<string[]>;
     };
+    jsQR?: (
+      data: Uint8ClampedArray,
+      width: number,
+      height: number,
+      options?: { inversionAttempts?: "dontInvert" | "onlyInvert" | "attemptBoth" | "invertFirst" }
+    ) => { data: string } | null;
   }
 }
 
@@ -783,6 +789,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [maintenanceSearch, setMaintenanceSearch] = useState("");
   const [maintenanceStatusFilter, setMaintenanceStatusFilter] = useState("All");
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
   const profileSectionRef = useRef<HTMLDivElement | null>(null);
@@ -831,15 +838,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
         return;
       }
 
-      // BarcodeDetector is optional - we can fall back to manual scan
       const hasBarcodeDetector = window.BarcodeDetector && typeof window.BarcodeDetector === "function";
 
-      // If we have getUserMedia, set scanner as supported
       setScannerSupported(true);
       setScannerStatus(
         hasBarcodeDetector
           ? "Ready to scan. Press Open Camera Scanner to begin."
-          : "Camera access available. Manual scan recommended (auto-detect not supported on this browser)."
+          : "Ready to scan. This phone will use the mobile QR fallback scanner."
       );
     } catch (error) {
       console.error("Scanner support check error:", error);
@@ -1223,81 +1228,159 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     return true;
   }
 
+  function loadJsQrFallback() {
+    return new Promise<boolean>((resolve) => {
+      if (window.jsQR) {
+        resolve(true);
+        return;
+      }
+
+      const existingScript = document.querySelector<HTMLScriptElement>("script[data-kopkop-jsqr='true']");
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(Boolean(window.jsQR)), { once: true });
+        existingScript.addEventListener("error", () => resolve(false), { once: true });
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+      script.async = true;
+      script.defer = true;
+      script.dataset.kopkopJsqr = "true";
+      script.onload = () => resolve(Boolean(window.jsQR));
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+  }
+
+  function startJsQrFallbackScan() {
+    setScannerStatus("Mobile QR scanner active. Point your phone camera at the QR label.");
+
+    const scan = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const jsQR = window.jsQR;
+
+      if (!video || !canvas || !jsQR) {
+        scanLoopRef.current = window.setTimeout(scan, 350);
+        return;
+      }
+
+      if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+        scanLoopRef.current = window.setTimeout(scan, 350);
+        return;
+      }
+
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        setScannerStatus("Could not read camera image. Try manual scan.");
+        return;
+      }
+
+      context.drawImage(video, 0, 0, width, height);
+      const imageData = context.getImageData(0, 0, width, height);
+      const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+
+      if (result?.data && handleScannedCode(result.data)) return;
+      scanLoopRef.current = window.setTimeout(scan, 350);
+    };
+
+    scan();
+  }
+
   async function startScanner() {
     if (!scannerSupported) {
-      setScannerStatus("Camera scanner is not available. Please check browser compatibility or use manual scan.");
+      setScannerStatus("Camera scanner is not available. Please check browser permissions or use manual scan.");
       return;
     }
 
     try {
+      stopScanner();
       setScannerStatus("Requesting camera access...");
-      
-      // Request camera access
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
 
       mediaStreamRef.current = stream;
       setScannerOpen(true);
 
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch((error) => {
-          console.error("Video play error:", error);
-          setScannerStatus("Could not play video stream.");
-        });
+        videoRef.current.setAttribute("playsinline", "true");
+        await videoRef.current.play();
       }
 
-      // Try to use BarcodeDetector if available
       if (window.BarcodeDetector && typeof window.BarcodeDetector === "function") {
         try {
           const detector = new window.BarcodeDetector({
             formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
           });
 
-          setScannerStatus("Camera scanner active. Point at barcode/QR code.");
+          setScannerStatus("Camera scanner active. Point at the QR label.");
 
           const scan = async () => {
             if (!videoRef.current || videoRef.current.readyState < 2) {
-              scanLoopRef.current = window.setTimeout(scan, 400);
+              scanLoopRef.current = window.setTimeout(scan, 350);
               return;
             }
+
             try {
               const results = await detector.detect(videoRef.current);
               const value = results?.[0]?.rawValue;
               if (value && handleScannedCode(value)) return;
             } catch (detectError) {
-              // Detection errors are expected when nothing is detected
-              if (!(detectError instanceof Error && detectError.name === "NotSupportedError")) {
-                console.debug("Barcode detection debug:", detectError);
+              console.debug("BarcodeDetector unavailable, switching to mobile QR fallback:", detectError);
+              const fallbackLoaded = await loadJsQrFallback();
+              if (fallbackLoaded) {
+                startJsQrFallbackScan();
+                return;
               }
+              setScannerStatus("Auto scan is not supported on this phone. Type the asset tag below.");
+              return;
             }
-            scanLoopRef.current = window.setTimeout(scan, 600);
+
+            scanLoopRef.current = window.setTimeout(scan, 350);
           };
 
           scan();
+          return;
         } catch (detectorError) {
-          console.error("BarcodeDetector initialization error:", detectorError);
-          setScannerStatus("Auto-detection unavailable. Use manual scan mode.");
+          console.debug("BarcodeDetector failed, using mobile QR fallback:", detectorError);
         }
+      }
+
+      const fallbackLoaded = await loadJsQrFallback();
+      if (fallbackLoaded) {
+        startJsQrFallbackScan();
       } else {
-        setScannerStatus("Camera active. Use manual scan mode to enter codes.");
+        setScannerStatus("Camera opened, but QR auto-detect could not load. Type the asset tag below.");
       }
     } catch (error) {
       console.error("Camera access error:", error);
       stopScanner();
 
-      // Provide specific error messages based on error type
       if (error instanceof DOMException) {
         if (error.name === "NotAllowedError") {
-          setScannerStatus("Camera permission denied. Check browser settings and allow camera access.");
+          setScannerStatus("Camera permission denied. On your phone, allow camera access for this website and try again.");
         } else if (error.name === "NotFoundError") {
-          setScannerStatus("No camera device found. Please check your device.");
+          setScannerStatus("No camera device found. Please check your phone camera.");
         } else if (error.name === "NotReadableError") {
-          setScannerStatus("Camera is in use by another application. Please close it and try again.");
+          setScannerStatus("Camera is being used by another app. Close camera/WhatsApp/TikTok and try again.");
         } else if (error.name === "SecurityError") {
-          setScannerStatus("Camera access requires HTTPS or localhost. Please use a secure connection.");
+          setScannerStatus("Camera access needs HTTPS. Open the Vercel HTTPS link, not an insecure link.");
         } else {
           setScannerStatus(`Camera error: ${error.message}`);
         }
@@ -2513,13 +2596,16 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
                 <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-slate-950">
                   {scannerOpen ? (
-                    <video ref={videoRef} className="h-[320px] w-full object-cover" muted playsInline />
+                    <>
+                      <video ref={videoRef} className="h-[320px] w-full object-cover" muted playsInline autoPlay />
+                      <canvas ref={canvasRef} className="hidden" />
+                    </>
                   ) : (
                     <div className="grid h-[320px] place-items-center text-center text-slate-300">
                       <div>
                         <p className="text-lg font-semibold">Scanner preview</p>
                         <p className="mt-2 text-sm text-slate-400">
-                          {scannerSupported ? "Press Open Camera Scanner to begin." : "Camera scanner is not supported on this browser."}
+                          {scannerSupported ? "Press Open Camera Scanner to begin." : "Camera access is not supported on this browser."}
                         </p>
                       </div>
                     </div>
