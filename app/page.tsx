@@ -1196,19 +1196,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     [assets]
   );
 
-  function scrollToTab(tab: typeof activeTab) {
-    window.setTimeout(() => {
-      const section = document.getElementById(`tab-${tab}`);
-
-      if (section) {
-        section.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }, 120);
-  }
-
   function openMobileTab(tab: typeof activeTab) {
     setActiveTab(tab);
-    scrollToTab(tab);
 
     if (tab === "scan") {
       window.setTimeout(() => {
@@ -1646,7 +1635,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
     setSelectedAssetId(asset.id);
     setActiveTab("maintenance");
-    scrollToTab("maintenance");
   }
 
 
@@ -1735,7 +1723,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       previousAssetStatus: record.previous_asset_status || "In Use",
     });
     setActiveTab("maintenance");
-    scrollToTab("maintenance");
   }
 
   async function handleSaveMaintenance(e: React.FormEvent) {
@@ -1916,7 +1903,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       performance: asset.performance || "",
     });
     setActiveTab("inventory");
-    scrollToTab("inventory");
   }
 
   function resetAssetForm() {
@@ -2055,7 +2041,6 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
     setSelectedAssetId(asset.id);
     setActiveTab("audit");
-    scrollToTab("audit");
   }
 
   async function handleSaveAudit(e: React.FormEvent) {
