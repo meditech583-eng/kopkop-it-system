@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-
+import MobileAssetCard from "./components/MobileAssetCard";
 declare global {
   interface Window {
     BarcodeDetector?: {
@@ -3109,7 +3109,28 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
               <div className="rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Inventory overview" subtitle="Select a device to review its specs, condition, update status, and recommendation." />
                 <div className="overflow-hidden rounded-3xl border border-slate-200">
-                  <div className="max-h-[620px] overflow-auto">
+                  <div className="grid gap-4 p-4 md:hidden">
+                    {filteredAssets.map((asset) => (
+                      <MobileAssetCard
+                        key={asset.id}
+                        asset={asset}
+                        loading={loading}
+                        savingAudit={savingAudit}
+                        savingMaintenance={savingMaintenance}
+                        openDeviceProfile={openDeviceProfile}
+                        openAuditForAsset={openAuditForAsset}
+                        createMaintenance={createMaintenance}
+                      />
+                    ))}
+
+                    {filteredAssets.length === 0 ? (
+                      <div className="rounded-3xl bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+                        No assets matched your filters.
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="hidden max-h-[620px] overflow-auto md:block">
                     <table className="min-w-full text-sm">
                       <thead className="sticky top-0 bg-slate-50 text-left text-slate-600">
                         <tr>
