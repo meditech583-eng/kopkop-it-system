@@ -1196,14 +1196,24 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     [assets]
   );
 
+  function scrollToTab(tab: typeof activeTab) {
+    window.setTimeout(() => {
+      const section = document.getElementById(`tab-${tab}`);
+
+      if (section) {
+        section.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 120);
+  }
+
   function openMobileTab(tab: typeof activeTab) {
     setActiveTab(tab);
-    window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+    scrollToTab(tab);
 
     if (tab === "scan") {
       window.setTimeout(() => {
         startScanner();
-      }, 250);
+      }, 300);
     }
   }
 
@@ -1636,7 +1646,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
     setSelectedAssetId(asset.id);
     setActiveTab("maintenance");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTab("maintenance");
   }
 
 
@@ -1725,7 +1735,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       previousAssetStatus: record.previous_asset_status || "In Use",
     });
     setActiveTab("maintenance");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTab("maintenance");
   }
 
   async function handleSaveMaintenance(e: React.FormEvent) {
@@ -1906,7 +1916,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       performance: asset.performance || "",
     });
     setActiveTab("inventory");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTab("inventory");
   }
 
   function resetAssetForm() {
@@ -2045,7 +2055,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
     setSelectedAssetId(asset.id);
     setActiveTab("audit");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTab("audit");
   }
 
   async function handleSaveAudit(e: React.FormEvent) {
@@ -2472,7 +2482,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
+        <div id="tab-dashboard" className="scroll-mt-24 mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
           <StatCard label="Total Assets" value={stats.total} hint="All records in it_assets" />
           <StatCard label="In Use" value={stats.inUse} hint="Currently assigned or active" />
           <StatCard label="Average Health" value={`${stats.avgScore}%`} hint="Based on specs and latest audits" />
@@ -2615,7 +2625,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
         </div>
 
         {activeTab === "scan" && (
-          <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+          <div id="tab-scan" className="scroll-mt-24 mt-6 rounded-3xl bg-white p-5 shadow-sm">
             <SectionTitle title="Barcode / QR scanning" subtitle="Scan an asset tag or serial number to open the correct device record instantly." />
             <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
               <div className="rounded-3xl border border-slate-200 p-5">
@@ -2690,7 +2700,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
 
         {activeTab === "maintenance" && (
-          <div className="mt-6 space-y-6">
+          <div id="tab-maintenance" className="scroll-mt-24 mt-6 space-y-6">
             <div className="rounded-3xl bg-white p-5 shadow-sm">
               <SectionTitle
                 title="Maintenance / repair workflow"
@@ -3106,7 +3116,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             </div>
 
             {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "profile" || activeTab === "scan" || activeTab === "labels") && (
-              <div className="rounded-3xl bg-white p-5 shadow-sm">
+              <div id="tab-inventory" className="scroll-mt-24 rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Inventory overview" subtitle="Select a device to review its specs, condition, update status, and recommendation." />
                 <div className="overflow-hidden rounded-3xl border border-slate-200">
                   <div className="grid gap-4 p-4 md:hidden">
@@ -3562,7 +3572,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             )}
 
             {activeTab === "audit" && (
-              <div className="rounded-3xl bg-white p-5 shadow-sm">
+              <div id="tab-audit" className="scroll-mt-24 rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Quick audit form" subtitle="Save an audit result for the selected asset." />
                 <form onSubmit={handleSaveAudit} className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
