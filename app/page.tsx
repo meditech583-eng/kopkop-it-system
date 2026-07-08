@@ -793,6 +793,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scanLoopRef = useRef<number | null>(null);
   const profileSectionRef = useRef<HTMLDivElement | null>(null);
+  const activeContentRef = useRef<HTMLDivElement | null>(null);
 
   const isAdmin = role === "admin";
 
@@ -1196,13 +1197,28 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     [assets]
   );
 
+  function scrollToActiveContent(tab: typeof activeTab) {
+    window.setTimeout(() => {
+      const target =
+        tab === "dashboard"
+          ? document.getElementById("tab-dashboard")
+          : activeContentRef.current;
+
+      target?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 180);
+  }
+
   function openMobileTab(tab: typeof activeTab) {
     setActiveTab(tab);
+    scrollToActiveContent(tab);
 
     if (tab === "scan") {
       window.setTimeout(() => {
         startScanner();
-      }, 300);
+      }, 350);
     }
   }
 
@@ -1635,6 +1651,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
     setSelectedAssetId(asset.id);
     setActiveTab("maintenance");
+    scrollToActiveContent("maintenance");
   }
 
 
@@ -1723,6 +1740,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       previousAssetStatus: record.previous_asset_status || "In Use",
     });
     setActiveTab("maintenance");
+    scrollToActiveContent("maintenance");
   }
 
   async function handleSaveMaintenance(e: React.FormEvent) {
@@ -1903,6 +1921,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       performance: asset.performance || "",
     });
     setActiveTab("inventory");
+    scrollToActiveContent("inventory");
   }
 
   function resetAssetForm() {
@@ -2041,6 +2060,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
     setSelectedAssetId(asset.id);
     setActiveTab("audit");
+    scrollToActiveContent("audit");
   }
 
   async function handleSaveAudit(e: React.FormEvent) {
@@ -2608,6 +2628,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             </button>
           ))}
         </div>
+
+        <div ref={activeContentRef} className="scroll-mt-28" />
 
         {activeTab === "scan" && (
           <div id="tab-scan" className="scroll-mt-24 mt-6 rounded-3xl bg-white p-5 shadow-sm">
