@@ -1196,6 +1196,17 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     [assets]
   );
 
+  function openMobileTab(tab: typeof activeTab) {
+    setActiveTab(tab);
+    window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 80);
+
+    if (tab === "scan") {
+      window.setTimeout(() => {
+        startScanner();
+      }, 250);
+    }
+  }
+
   function openDeviceProfile(assetId: number) {
     setSelectedAssetId(assetId);
     setActiveTab("profile");
@@ -2397,7 +2408,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
+    <div className="min-h-screen bg-slate-100 pb-28 text-slate-900 md:pb-0">
       <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
         <div className="rounded-[28px] bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-900 p-6 text-white shadow-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -2432,6 +2443,32 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             <Badge text={`Average score: ${stats.avgScore}%`} className="bg-white/10 text-white" />
             <Badge text={scannerSupported ? "Camera scanner supported" : "Manual scan available"} className="bg-white/10 text-white" />
             <Badge text={`Role: ${role || "staff"}`} className="bg-white/10 text-white" />
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:hidden">
+          <div className="rounded-3xl border border-cyan-100 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Mobile Technician Mode</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">Quick field actions</h2>
+            <p className="mt-1 text-sm text-slate-500">Use these while walking around campus. Scan opens the camera immediately.</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => openMobileTab("scan")} className="rounded-2xl bg-cyan-700 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
+                <span className="block text-2xl">📷</span>
+                Scan Device
+              </button>
+              <button type="button" onClick={() => openMobileTab("inventory")} className="rounded-2xl bg-slate-900 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
+                <span className="block text-2xl">📦</span>
+                Assets
+              </button>
+              <button type="button" onClick={() => openMobileTab("maintenance")} className="rounded-2xl bg-amber-500 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
+                <span className="block text-2xl">🛠️</span>
+                Maintenance
+              </button>
+              <button type="button" onClick={() => openMobileTab("dashboard")} className="rounded-2xl bg-emerald-600 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
+                <span className="block text-2xl">📊</span>
+                Dashboard
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2553,7 +2590,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-3 rounded-3xl bg-white p-3 shadow-sm">
+        <div className="mt-6 hidden flex-wrap gap-3 rounded-3xl bg-white p-3 shadow-sm md:flex">
           {[
             ["dashboard", "Dashboard"],
             ["inventory", "Inventory"],
@@ -2602,7 +2639,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                       <div>
                         <p className="text-lg font-semibold">Scanner preview</p>
                         <p className="mt-2 text-sm text-slate-400">
-                          {scannerSupported ? "Press Open Camera Scanner to begin." : "Camera access is not supported on this browser."}
+                          Press Open Camera Scanner to begin. If your phone asks for permission, choose Allow.
                         </p>
                       </div>
                     </div>
@@ -3718,6 +3755,39 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
           </div>
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={() => openMobileTab("scan")}
+        className="fixed bottom-24 right-4 z-40 grid h-16 w-16 place-items-center rounded-full bg-cyan-700 text-2xl text-white shadow-2xl md:hidden print:hidden"
+        aria-label="Open scanner"
+      >
+        📷
+      </button>
+
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur md:hidden print:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+          {[
+            ["dashboard", "🏠", "Home"],
+            ["scan", "📷", "Scan"],
+            ["inventory", "📦", "Assets"],
+            ["maintenance", "🛠️", "Repair"],
+            ["audit", "✅", "Audit"],
+          ].map(([key, icon, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => openMobileTab(key as typeof activeTab)}
+              className={`rounded-2xl px-2 py-2 text-center text-[11px] font-bold ${
+                activeTab === key ? "bg-slate-900 text-white" : "text-slate-600"
+              }`}
+            >
+              <span className="block text-xl leading-none">{icon}</span>
+              <span className="mt-1 block">{label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 }
