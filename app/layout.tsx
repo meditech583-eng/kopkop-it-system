@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import PWARegister from "./pwa-register";
@@ -15,21 +15,43 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "KOPKOP College ICT Asset Audit & Compliance System",
-  description: "Official school-wide inventory, pending audit, compliance, and reporting platform.",
+  description:
+    "Official school-wide inventory, maintenance, audit, compliance and reporting platform.",
   manifest: "/manifest.json",
-  themeColor: "#0f172a",
+
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "KOPKOP ICT Audit",
+    title: "KOPKOP ICT",
   },
+
   icons: {
     icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      {
+        url: "/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        url: "/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
     ],
-    apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [
+      {
+        url: "/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+    ],
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

@@ -67,6 +67,18 @@ type ITAsset = {
   charger: string | null;
   headset: string | null;
   storage: string | null;
+  processor: string | null;
+  gpu: string | null;
+  motherboard: string | null;
+  bios_version: string | null;
+  bios_date: string | null;
+  tpm_status: string | null;
+  hostname: string | null;
+  ip_address: string | null;
+  mac_address: string | null;
+  photo_front_url: string | null;
+  photo_back_url: string | null;
+  photo_label_url: string | null;
   online_status: string | null;
   windows_update: string | null;
   desktop_loading_speed: string | null;
@@ -171,6 +183,18 @@ type AssetFormState = {
   charger: string;
   headset: string;
   storage: string;
+  processor: string;
+  gpu: string;
+  motherboard: string;
+  biosVersion: string;
+  biosDate: string;
+  tpmStatus: string;
+  hostname: string;
+  ipAddress: string;
+  macAddress: string;
+  photoFrontUrl: string;
+  photoBackUrl: string;
+  photoLabelUrl: string;
   onlineStatus: string;
   windowsUpdate: string;
   desktopLoadingSpeed: string;
@@ -228,6 +252,18 @@ const EMPTY_ASSET_FORM: AssetFormState = {
   charger: "",
   headset: "",
   storage: "",
+  processor: "",
+  gpu: "",
+  motherboard: "",
+  biosVersion: "",
+  biosDate: "",
+  tpmStatus: "",
+  hostname: "",
+  ipAddress: "",
+  macAddress: "",
+  photoFrontUrl: "",
+  photoBackUrl: "",
+  photoLabelUrl: "",
   onlineStatus: "",
   windowsUpdate: "",
   desktopLoadingSpeed: "",
@@ -291,6 +327,35 @@ function formatDate(value?: string | null) {
 function formatDateTime(value?: string | null) {
   if (!value) return "-";
   return new Date(value).toLocaleString();
+}
+
+function calculateDeviceAge(value?: string | null) {
+  if (!value) return "Not available";
+  const start = new Date(value);
+  if (Number.isNaN(start.getTime())) return "Not available";
+  const today = new Date();
+  let years = today.getFullYear() - start.getFullYear();
+  let months = today.getMonth() - start.getMonth();
+  if (today.getDate() < start.getDate()) months -= 1;
+  if (months < 0) { years -= 1; months += 12; }
+  if (years < 0) return "Not available";
+  const parts = [];
+  if (years) parts.push(`${years} year${years === 1 ? "" : "s"}`);
+  if (months || !years) parts.push(`${months} month${months === 1 ? "" : "s"}`);
+  return parts.join(" ");
+}
+
+function getWarrantyStatus(value?: string | null) {
+  if (!value) return "Not recorded";
+  const expiry = new Date(value);
+  if (Number.isNaN(expiry.getTime())) return "Not recorded";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  expiry.setHours(0, 0, 0, 0);
+  const days = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return `Expired ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago`;
+  if (days === 0) return "Expires today";
+  return `Active - ${days} day${days === 1 ? "" : "s"} remaining`;
 }
 
 function safeNumber(value: string) {
@@ -766,6 +831,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [savingAsset, setSavingAsset] = useState(false);
   const [savingAudit, setSavingAudit] = useState(false);
   const [savingMaintenance, setSavingMaintenance] = useState(false);
+  const [uploadingPhotoSlot, setUploadingPhotoSlot] = useState<"front" | "back" | "label" | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<number | null>(null);
   const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
   const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
@@ -1437,6 +1503,315 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     handleScannedCode(manualScanCode.trim());
   }
 
+
+  function printSelectedAssetReport() {
+    if (!selectedAsset) {
+      alert("Please select a device first.");
+      return;
+    }
+
+    const reportAsset = selectedAsset;
+    const latestAudit = selectedAssetAudits[0] || null;
+    const latestMaintenance = selectedAssetMaintenance[0] || null;
+    const generatedAt = new Date();
+    const logoUrl = `${window.location.origin}/kopkop-logo.png`;
+    const qrUrl = buildQrUrl(reportAsset.asset_tag.trim(), 900);
+    const barcodeUrl = `https://bwipjs-api.metafloor.com/?bcid=code128&scale=4&height=16&includetext&textsize=13&text=${encodeURIComponent(reportAsset.asset_tag.trim())}`;
+    const healthScore = Math.max(0, Math.min(100, reportAsset.displayScore));
+    const healthTone =
+      healthScore >= 85
+        ? { accent: "#15803d", soft: "#dcfce7", label: healthScore >= 95 ? "Excellent" : "Healthy", risk: "Low" }
+        : healthScore >= 65
+          ? { accent: "#a16207", soft: "#fef3c7", label: "Watch", risk: "Moderate" }
+          : healthScore >= 40
+            ? { accent: "#c2410c", soft: "#ffedd5", label: "Needs Upgrade", risk: "High" }
+            : { accent: "#b91c1c", soft: "#fee2e2", label: "Critical", risk: "Critical" };
+    const rawWarrantyStatus = getWarrantyStatus(reportAsset.warranty_expiry);
+    const warrantyStatus = rawWarrantyStatus === "Not recorded" ? "Warranty unknown" : rawWarrantyStatus;
+    const expectedRefreshDate = (() => {
+      if (!reportAsset.purchase_date) return "Not available";
+      const purchaseDate = new Date(reportAsset.purchase_date);
+      if (Number.isNaN(purchaseDate.getTime())) return "Not available";
+      purchaseDate.setFullYear(purchaseDate.getFullYear() + 5);
+      return purchaseDate.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    })();
+    const assetStatusTone = (() => {
+      switch ((reportAsset.status || "").toLowerCase()) {
+        case "in use": return { background: "#dcfce7", color: "#166534", dot: "#16a34a" };
+        case "under repair": return { background: "#fef3c7", color: "#92400e", dot: "#f59e0b" };
+        case "damaged":
+        case "lost": return { background: "#fee2e2", color: "#991b1b", dot: "#dc2626" };
+        case "in store": return { background: "#dbeafe", color: "#1d4ed8", dot: "#3b82f6" };
+        case "retired": return { background: "#e2e8f0", color: "#334155", dot: "#64748b" };
+        default: return { background: "#e2e8f0", color: "#334155", dot: "#64748b" };
+      }
+    })();
+    const recordedHealthChecks = [
+      { label: "Physical Condition", value: reportAsset.condition || "Not recorded", good: (reportAsset.condition || "").toLowerCase() === "good" },
+      { label: "Performance", value: reportAsset.performance || "Not recorded", good: (reportAsset.performance || "").toLowerCase() === "good" },
+      { label: "Boot Speed", value: reportAsset.booting_speed || "Not recorded", good: (reportAsset.booting_speed || "").toLowerCase() === "good" },
+      { label: "Windows Update", value: reportAsset.windows_update || "Not recorded", good: (reportAsset.windows_update || "").toLowerCase().includes("updated") },
+      { label: "Online Status", value: reportAsset.online_status || "Not recorded", good: (reportAsset.online_status || "").toLowerCase() === "online" },
+      { label: "TPM", value: reportAsset.tpm_status || "Not recorded", good: (reportAsset.tpm_status || "").toLowerCase().includes("enabled") },
+    ];
+
+    const photoItems = [
+      { label: "Front View", url: reportAsset.photo_front_url },
+      { label: "Back View", url: reportAsset.photo_back_url },
+      { label: "Serial / Asset Label", url: reportAsset.photo_label_url },
+    ].filter((item) => Boolean(item.url));
+    const mainPhoto = photoItems[0]?.url || "";
+
+    const reportHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${safeHtml(reportAsset.asset_tag)} - Digital Device Passport</title>
+          <style>
+            @page { size: A4 portrait; margin: 8mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            html, body { margin: 0; padding: 0; background: #fff; color: #0f172a; font-family: Arial, Helvetica, sans-serif; font-size: 9px; line-height: 1.28; }
+            body { position: relative; }
+            .watermark { position: fixed; inset: 0; z-index: -1; display: grid; place-items: center; pointer-events: none; }
+            .watermark img { width: 125mm; height: 125mm; object-fit: contain; opacity: .09; filter: grayscale(1); }
+            .report { width: 100%; max-width: 194mm; margin: 0 auto; }
+            .header { display: grid; grid-template-columns: 21mm 1fr 45mm; align-items: center; gap: 4mm; padding: 2mm 0 3mm; border-bottom: 2.5px solid #0f172a; }
+            .logo { width: 19mm; height: 19mm; object-fit: contain; }
+            .school { font-size: 20px; line-height: 1; font-weight: 900; letter-spacing: .08em; }
+            .system { margin-top: 2px; font-size: 8px; font-weight: 700; color: #334155; letter-spacing: .04em; }
+            .official { margin-top: 2px; font-size: 6.8px; color: #64748b; letter-spacing: .14em; text-transform: uppercase; }
+            .meta { text-align: right; color: #475569; font-size: 7px; }
+            .meta strong { display: block; color: #0f172a; font-size: 9px; }
+            .hero { margin-top: 3mm; display: grid; grid-template-columns: 1fr 33mm 30mm; gap: 4mm; align-items: center; min-height: 30mm; border-radius: 3mm; padding: 4mm; background: #0f172a; color: #fff; }
+            .device-title { font-size: 19px; font-weight: 900; line-height: 1; }
+            .tag-line { margin-top: 2mm; display: flex; flex-wrap: wrap; gap: 1.5mm; align-items: center; font-size: 7.8px; color: #e2e8f0; }
+            .chip { border: 1px solid rgba(255,255,255,.45); border-radius: 99px; padding: 1mm 2mm; color: #fff; }
+            .health-ring { width: 28mm; height: 28mm; border-radius: 50%; display: grid; place-items: center; text-align: center; border: 2.5mm solid ${healthTone.accent}; background: #fff; color: #0f172a; }
+            .health-ring strong { display: block; font-size: 17px; line-height: 1; }
+            .health-ring span { display: block; margin-top: 1.2px; font-size: 7px; font-weight: 800; color: ${healthTone.accent}; text-transform: uppercase; }
+            .qr { width: 28mm; height: 28mm; padding: 1.5mm; border-radius: 2mm; background: #fff; object-fit: contain; }
+            .overview { margin-top: 2.5mm; display: grid; grid-template-columns: 56mm 1fr; gap: 2.5mm; }
+            .photo-main { height: 48mm; box-shadow: 0 2px 8px rgba(15,23,42,.14); overflow: hidden; border: 1px solid #cbd5e1; border-radius: 2.5mm; background: #f8fafc; }
+            .photo-main img { width: 100%; height: 100%; object-fit: contain; object-position: center; background: #f8fafc; padding: 2mm; }
+            .photo-placeholder { height: 100%; display: grid; place-items: center; text-align: center; color: #94a3b8; font-size: 8px; padding: 4mm; }
+            .classification { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; }
+            .class-card { min-height: 20mm; padding: 2.5mm; border: 1px solid #cbd5e1; border-radius: 2.5mm; background: #fff; }
+            .class-label { color: #64748b; font-size: 6.8px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+            .class-value { margin-top: 2mm; font-size: 10.5px; font-weight: 900; color: #0f172a; overflow-wrap: anywhere; }
+            .grid { margin-top: 2.5mm; display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; }
+            .section { border: 1px solid #cbd5e1; border-radius: 2.5mm; padding: 2.7mm 3mm; break-inside: avoid; page-break-inside: avoid; background: rgba(255,255,255,.96); }
+            .full { grid-column: 1 / -1; }
+            .section-title { margin: 0 0 2mm; padding-bottom: 1.4mm; border-bottom: 1px solid #e2e8f0; font-size: 8.2px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
+            .section-title:before { content: ""; display: inline-block; width: 1.2mm; height: 3mm; margin-right: 1.6mm; border-radius: 99px; background: #0f172a; vertical-align: -0.5mm; }
+            .rows { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2mm 3mm; }
+            .row { min-width: 0; overflow-wrap: anywhere; }
+            .label { font-weight: 800; color: #334155; }
+            .value { color: #0f172a; }
+            .status-pill { display: inline-block; border-radius: 99px; padding: .5mm 1.5mm; background: ${healthTone.soft}; color: ${healthTone.accent}; font-weight: 900; }
+            .asset-status-pill { display: inline-flex; align-items: center; gap: 1.2mm; border-radius: 99px; padding: 1mm 2mm; background: ${assetStatusTone.background}; color: ${assetStatusTone.color}; font-weight: 900; font-size: 9px; }
+            .asset-status-pill::before { content: ""; width: 2.2mm; height: 2.2mm; border-radius: 50%; background: ${assetStatusTone.dot}; }
+            .risk-pill { display: inline-flex; align-items: center; gap: 1.2mm; border-radius: 99px; padding: 1mm 2mm; background: ${healthTone.soft}; color: ${healthTone.accent}; font-weight: 900; font-size: 9px; }
+            .risk-pill::before { content: ""; width: 2.2mm; height: 2.2mm; border-radius: 50%; background: ${healthTone.accent}; }
+            .qr-wrap { text-align: center; }
+            .qr-caption { margin-top: 1mm; color: #cbd5e1; font-size: 5.8px; line-height: 1.15; }
+            .health-checks { margin-top: 2mm; display: grid; grid-template-columns: repeat(3,1fr); gap: 1.5mm; }
+            .health-check { border: 1px solid #dbe4ef; border-radius: 1.8mm; padding: 1.5mm; background: #f8fafc; }
+            .health-check small { display: block; color: #64748b; font-size: 6.2px; }
+            .health-check strong { display: block; margin-top: .6mm; font-size: 7.5px; }
+            .health-check.good strong { color: #15803d; }
+            .barcode-id { margin-top: .5mm; text-align: center; font-size: 11px; font-weight: 900; letter-spacing: .18em; color: #0f172a; }
+            .summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 2mm; }
+            .summary { border: 1px solid #dbe4ef; border-radius: 2mm; padding: 2mm; text-align: center; background: #f8fafc; }
+            .summary small { display: block; color: #64748b; font-size: 6.5px; }
+            .summary strong { display: block; margin-top: .8mm; font-size: 9px; }
+            .photos { display: grid; grid-template-columns: repeat(3,1fr); gap: 2.5mm; }
+            .evidence { border: 1px solid #cbd5e1; border-radius: 2mm; overflow: hidden; background: #f8fafc; }
+            .evidence img { display: block; width: 100%; height: 35mm; object-fit: contain; object-position: center; background: #f8fafc; padding: 1mm; }
+            .evidence-label { padding: 1.5mm; text-align: center; font-size: 7px; font-weight: 800; color: #334155; }
+            .barcode-wrap { display: flex; align-items: center; justify-content: space-between; gap: 4mm; }
+            .barcode { max-width: 88mm; height: 21mm; object-fit: contain; }
+            .signatures { margin-top: 5mm; display: grid; grid-template-columns: repeat(3,1fr); gap: 8mm; }
+            .signature { border-top: 1.2px solid #334155; padding-top: 2.5mm; min-height: 22mm; color: #475569; font-size: 7px; }
+            .signature strong { display: block; color: #0f172a; font-size: 8px; }
+            .footer { margin-top: 3mm; padding-top: 1.5mm; border-top: 1px solid #cbd5e1; display: flex; justify-content: space-between; color: #64748b; font-size: 6.5px; }
+            @media print { body { padding: 0; } .report { max-width: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="watermark"><img src="${safeHtml(logoUrl)}" alt="" /></div>
+          <main class="report">
+            <header class="header">
+              <img class="logo" src="${safeHtml(logoUrl)}" alt="Kopkop College Logo" />
+              <div>
+                <div class="school">KOPKOP COLLEGE</div>
+                <div class="system">ICT Asset, Device Health & Audit System</div>
+                <div class="official">Official Digital Device Passport</div>
+              </div>
+              <div class="meta">
+                <strong>Asset Passport</strong>
+                Generated: ${safeHtml(formatDateTime(generatedAt.toISOString()))}<br />
+                Prepared by: ${safeHtml(user?.email || "ICT Department")}<br />
+                Document: ${safeHtml(reportAsset.asset_tag)}-DP-01
+              </div>
+            </header>
+
+            <section class="hero">
+              <div>
+                <div class="device-title">${safeHtml(reportAsset.item_name)}</div>
+                <div class="tag-line">
+                  <span class="chip">${safeHtml(reportAsset.asset_tag)}</span>
+                  <span>${safeHtml(reportAsset.category || "Device")}</span><span>•</span>
+                  <span>${safeHtml([reportAsset.brand, reportAsset.model].filter(Boolean).join(" ") || "Model not recorded")}</span><span>•</span>
+                  <span>${safeHtml(reportAsset.location || "Location not recorded")}</span>
+                </div>
+              </div>
+              <div class="health-ring"><div><strong>${healthScore}%</strong><span>${safeHtml(healthTone.label)}</span></div></div>
+              <img class="qr" src="${safeHtml(qrUrl)}" alt="Asset QR Code" />
+            </section>
+
+            <section class="overview">
+              <div class="photo-main">
+                ${mainPhoto ? `<img src="${safeHtml(mainPhoto)}" alt="Primary device photo" />` : `<div class="photo-placeholder">No device photo uploaded</div>`}
+              </div>
+              <div class="classification">
+                <div class="class-card"><div class="class-label">Asset Status</div><div class="class-value"><span class="asset-status-pill">${safeHtml(reportAsset.status || "Not recorded")}</span></div></div>
+                <div class="class-card"><div class="class-label">Asset Type</div><div class="class-value">${safeHtml(reportAsset.category || "Not recorded")}</div></div>
+                <div class="class-card"><div class="class-label">Risk Level</div><div class="class-value"><span class="risk-pill">${safeHtml(healthTone.risk)}</span></div></div>
+                <div class="class-card"><div class="class-label">Department / Location</div><div class="class-value">${safeHtml(reportAsset.location || "Not recorded")}</div></div>
+              </div>
+            </section>
+
+            <div class="grid">
+              <section class="section">
+                <h2 class="section-title">General Information</h2>
+                <div class="rows">
+                  <div class="row"><span class="label">Device Type:</span> <span class="value">${safeHtml(reportAsset.category || "-")}</span></div>
+                  <div class="row"><span class="label">Status:</span> <span class="asset-status-pill">${safeHtml(reportAsset.status || "-")}</span></div>
+                  <div class="row"><span class="label">Brand:</span> <span class="value">${safeHtml(reportAsset.brand || "-")}</span></div>
+                  <div class="row"><span class="label">Model:</span> <span class="value">${safeHtml(reportAsset.model || "-")}</span></div>
+                  <div class="row"><span class="label">Serial Number:</span> <span class="value">${safeHtml(reportAsset.serial_number || "-")}</span></div>
+                  <div class="row"><span class="label">Condition:</span> <span class="value">${safeHtml(reportAsset.condition || "-")}</span></div>
+                  <div class="row"><span class="label">Assigned User:</span> <span class="value">${safeHtml(reportAsset.assigned_to || "-")}</span></div>
+                  <div class="row"><span class="label">Location:</span> <span class="value">${safeHtml(reportAsset.location || "-")}</span></div>
+                </div>
+              </section>
+
+              <section class="section">
+                <h2 class="section-title">Technical Specifications</h2>
+                <div class="rows">
+                  <div class="row"><span class="label">Operating System:</span> <span class="value">${safeHtml(reportAsset.os || "-")}</span></div>
+                  <div class="row"><span class="label">System Type:</span> <span class="value">${safeHtml(reportAsset.system_type || "-")}</span></div>
+                  <div class="row"><span class="label">Processor:</span> <span class="value">${safeHtml(reportAsset.processor || "-")}</span></div>
+                  <div class="row"><span class="label">RAM:</span> <span class="value">${safeHtml(reportAsset.ram || "-")}</span></div>
+                  <div class="row"><span class="label">Storage:</span> <span class="value">${safeHtml(reportAsset.storage || "-")}</span></div>
+                  <div class="row"><span class="label">GPU:</span> <span class="value">${safeHtml(reportAsset.gpu || "-")}</span></div>
+                  <div class="row"><span class="label">Motherboard:</span> <span class="value">${safeHtml(reportAsset.motherboard || "-")}</span></div>
+                  <div class="row"><span class="label">BIOS Version:</span> <span class="value">${safeHtml(reportAsset.bios_version || "-")}</span></div>
+                  <div class="row"><span class="label">BIOS Date:</span> <span class="value">${safeHtml(formatDate(reportAsset.bios_date))}</span></div>
+                  <div class="row"><span class="label">TPM:</span> <span class="value">${safeHtml(reportAsset.tpm_status || "-")}</span></div>
+                  <div class="row"><span class="label">Hostname:</span> <span class="value">${safeHtml(reportAsset.hostname || "-")}</span></div>
+                  <div class="row"><span class="label">IP Address:</span> <span class="value">${safeHtml(reportAsset.ip_address || "-")}</span></div>
+                  <div class="row"><span class="label">MAC Address:</span> <span class="value">${safeHtml(reportAsset.mac_address || "-")}</span></div>
+                  <div class="row"><span class="label">Connection:</span> <span class="value">${safeHtml(reportAsset.connection_type || "-")}</span></div>
+                  <div class="row"><span class="label">MS Office:</span> <span class="value">${safeHtml(reportAsset.ms_office || "-")}</span></div>
+                  <div class="row"><span class="label">Monitor:</span> <span class="value">${safeHtml(reportAsset.monitor || "-")}</span></div>
+                  <div class="row"><span class="label">Keyboard / Mouse:</span> <span class="value">${safeHtml([reportAsset.keyboard, reportAsset.mouse].filter(Boolean).join(" / ") || "-")}</span></div>
+                  <div class="row"><span class="label">Charger:</span> <span class="value">${safeHtml(reportAsset.charger || "-")}</span></div>
+                  <div class="row"><span class="label">Headset:</span> <span class="value">${safeHtml(reportAsset.headset || "-")}</span></div>
+                </div>
+              </section>
+
+              <section class="section">
+                <h2 class="section-title">Purchase & Warranty</h2>
+                <div class="rows">
+                  <div class="row"><span class="label">Supplier:</span> <span class="value">${safeHtml(reportAsset.supplier || "-")}</span></div>
+                  <div class="row"><span class="label">Quantity:</span> <span class="value">${safeHtml(reportAsset.quantity)}</span></div>
+                  <div class="row"><span class="label">Purchase Date:</span> <span class="value">${safeHtml(formatDate(reportAsset.purchase_date))}</span></div>
+                  <div class="row"><span class="label">Device Age:</span> <span class="value">${safeHtml(calculateDeviceAge(reportAsset.purchase_date))}</span></div>
+                  <div class="row"><span class="label">Expected Refresh:</span> <span class="value">${safeHtml(expectedRefreshDate)}</span></div>
+                  <div class="row"><span class="label">Warranty Expiry:</span> <span class="value">${safeHtml(formatDate(reportAsset.warranty_expiry))}</span></div>
+                  <div class="row"><span class="label">Warranty Status:</span> <span class="status-pill">${safeHtml(warrantyStatus)}</span></div>
+                </div>
+              </section>
+
+              <section class="section">
+                <h2 class="section-title">Performance & Health</h2>
+                <div class="rows">
+                  <div class="row"><span class="label">Performance:</span> <span class="value">${safeHtml(reportAsset.performance || "-")}</span></div>
+                  <div class="row"><span class="label">Boot Speed:</span> <span class="value">${safeHtml(reportAsset.booting_speed || "-")}</span></div>
+                  <div class="row"><span class="label">Desktop Loading:</span> <span class="value">${safeHtml(reportAsset.desktop_loading_speed || "-")}</span></div>
+                  <div class="row"><span class="label">Online Status:</span> <span class="value">${safeHtml(reportAsset.online_status || "-")}</span></div>
+                  <div class="row"><span class="label">Windows Update:</span> <span class="value">${safeHtml(reportAsset.windows_update || "-")}</span></div>
+                  <div class="row"><span class="label">Recommendation:</span> <span class="value">${safeHtml(reportAsset.recommendation)}</span></div>
+                </div>
+                <div class="health-checks">${recordedHealthChecks.map((check) => `<div class="health-check ${check.good ? "good" : ""}"><small>${safeHtml(check.label)}</small><strong>${safeHtml(check.value)}</strong></div>`).join("")}</div>
+              </section>
+
+              <section class="section full">
+                <h2 class="section-title">Current Device Status</h2>
+                <div class="summary-grid">
+                  <div class="summary"><small>Health</small><strong style="color:${healthTone.accent}">${healthScore}%</strong></div>
+                  <div class="summary"><small>Classification</small><strong>${safeHtml(healthTone.label)}</strong></div>
+                  <div class="summary"><small>Latest Audit</small><strong>${safeHtml(latestAudit ? formatDate(latestAudit.inspection_date) : "None")}</strong></div>
+                  <div class="summary"><small>Maintenance</small><strong>${safeHtml(latestMaintenance?.status || "No record")}</strong></div>
+                </div>
+              </section>
+
+              <section class="section">
+                <h2 class="section-title">Latest Audit</h2>
+                ${latestAudit ? `<div><strong>${safeHtml(latestAudit.final_status)}</strong> — Score ${safeHtml(latestAudit.health_score ?? 0)}%<br />Inspected by ${safeHtml(latestAudit.inspected_by)} on ${safeHtml(formatDate(latestAudit.inspection_date))}<br />${safeHtml(latestAudit.remarks || "No remarks recorded.")}</div>` : `<div>No audit records found for this device.</div>`}
+              </section>
+
+              <section class="section">
+                <h2 class="section-title">Latest Maintenance</h2>
+                ${latestMaintenance ? `<div><strong>${safeHtml(latestMaintenance.issue || "Maintenance ticket")}</strong><br />${safeHtml(latestMaintenance.status || "Open")} — ${safeHtml(latestMaintenance.priority || "Medium")} priority<br />Technician: ${safeHtml(latestMaintenance.technician || "Not assigned")}<br />${safeHtml(latestMaintenance.resolution_notes || latestMaintenance.action_taken || latestMaintenance.notes || "No details recorded.")}</div>` : `<div>No maintenance records found for this device.</div>`}
+              </section>
+
+              <section class="section full">
+                <h2 class="section-title">Notes & Alerts</h2>
+                <div><span class="label">Alerts:</span> ${safeHtml(reportAsset.alerts.length ? reportAsset.alerts.join(", ") : "None")}</div>
+                <div style="margin-top:1.5mm"><span class="label">Device Notes:</span> ${safeHtml(reportAsset.notes || "No notes recorded.")}</div>
+              </section>
+
+              ${photoItems.length ? `<section class="section full"><h2 class="section-title">Photographic Asset Evidence</h2><div class="photos">${photoItems.map((item) => `<div class="evidence"><img src="${safeHtml(item.url)}" alt="${safeHtml(item.label)}" /><div class="evidence-label">${safeHtml(item.label)}</div></div>`).join("")}</div></section>` : ""}
+
+              <section class="section full">
+                <div class="barcode-wrap">
+                  <div><h2 class="section-title" style="border:0;margin:0">Asset Identification</h2><div>Scan the QR code or Code 128 barcode to identify this asset.</div></div>
+                  <div><img class="barcode" src="${safeHtml(barcodeUrl)}" alt="Asset barcode" /><div class="barcode-id">${safeHtml(reportAsset.asset_tag)}</div></div>
+                </div>
+              </section>
+            </div>
+
+            <div class="signatures">
+              <div class="signature"><strong>Prepared by</strong>${safeHtml(user?.email || "ICT Department")}<br />ICT Department<br />Date: ${safeHtml(formatDate(generatedAt.toISOString()))}</div>
+              <div class="signature"><strong>Verified by</strong>IT Manager<br />Name / Signature / Date</div>
+              <div class="signature"><strong>Approved by</strong>Executive Director / Delegate<br />Name / Signature / Date</div>
+            </div>
+
+            <footer class="footer">
+              <span><strong>KOPKOP COLLEGE • ICT ASSET MANAGEMENT SYSTEM</strong><br />CONFIDENTIAL – INTERNAL ICT ASSET RECORD • Document Version 2.4</span>
+              <span>${safeHtml(reportAsset.asset_tag)} • Controlled Document • ${safeHtml(formatDate(generatedAt.toISOString()))}</span>
+            </footer>
+          </main>
+          ${buildPrintScript()}
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1100,height=1200");
+    if (!printWindow) {
+      alert("Please allow pop-ups so the device report can print.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(reportHtml);
+    printWindow.document.close();
+  }
+
   function printAllVisibleLabels() {
     const items = labelAssets.slice(0, 24);
     if (items.length === 0) {
@@ -1914,6 +2289,18 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       charger: (asset as any).charger || "",
       headset: (asset as any).headset || "",
       storage: asset.storage || "",
+      processor: asset.processor || "",
+      gpu: asset.gpu || "",
+      motherboard: asset.motherboard || "",
+      biosVersion: asset.bios_version || "",
+      biosDate: asset.bios_date || "",
+      tpmStatus: asset.tpm_status || "",
+      hostname: asset.hostname || "",
+      ipAddress: asset.ip_address || "",
+      macAddress: asset.mac_address || "",
+      photoFrontUrl: asset.photo_front_url || "",
+      photoBackUrl: asset.photo_back_url || "",
+      photoLabelUrl: asset.photo_label_url || "",
       onlineStatus: asset.online_status || "",
       windowsUpdate: asset.windows_update || "",
       desktopLoadingSpeed: asset.desktop_loading_speed || "",
@@ -1922,6 +2309,68 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
     setActiveTab("inventory");
     scrollToActiveContent("inventory");
+  }
+
+  async function handleAssetPhotoUpload(
+    file: File,
+    slot: "front" | "back" | "label"
+  ) {
+    if (!isAdmin) {
+      alert("Only admin users can upload asset photos.");
+      return;
+    }
+
+    if (!assetForm.assetTag.trim()) {
+      alert("Enter the Asset Tag before uploading photos.");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Please use an image smaller than 8 MB.");
+      return;
+    }
+
+    setUploadingPhotoSlot(slot);
+    try {
+      const extension = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const safeTag = safeFileName(assetForm.assetTag);
+      const path = `${safeTag}/${slot}-${Date.now()}.${extension || "jpg"}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("asset-photos")
+        .upload(path, file, { cacheControl: "3600", upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from("asset-photos").getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+
+      setAssetForm((current) => ({
+        ...current,
+        ...(slot === "front" ? { photoFrontUrl: publicUrl } : {}),
+        ...(slot === "back" ? { photoBackUrl: publicUrl } : {}),
+        ...(slot === "label" ? { photoLabelUrl: publicUrl } : {}),
+      }));
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Photo upload failed.");
+    } finally {
+      setUploadingPhotoSlot(null);
+    }
+  }
+
+  function clearAssetPhoto(slot: "front" | "back" | "label") {
+    setAssetForm((current) => ({
+      ...current,
+      ...(slot === "front" ? { photoFrontUrl: "" } : {}),
+      ...(slot === "back" ? { photoBackUrl: "" } : {}),
+      ...(slot === "label" ? { photoLabelUrl: "" } : {}),
+    }));
   }
 
   function resetAssetForm() {
@@ -1970,6 +2419,18 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       charger: assetForm.charger.trim() || null,
       headset: assetForm.headset.trim() || null,
       storage: assetForm.storage.trim() || null,
+      processor: assetForm.processor.trim() || null,
+      gpu: assetForm.gpu.trim() || null,
+      motherboard: assetForm.motherboard.trim() || null,
+      bios_version: assetForm.biosVersion.trim() || null,
+      bios_date: assetForm.biosDate || null,
+      tpm_status: assetForm.tpmStatus.trim() || null,
+      hostname: assetForm.hostname.trim() || null,
+      ip_address: assetForm.ipAddress.trim() || null,
+      mac_address: assetForm.macAddress.trim() || null,
+      photo_front_url: assetForm.photoFrontUrl.trim() || null,
+      photo_back_url: assetForm.photoBackUrl.trim() || null,
+      photo_label_url: assetForm.photoLabelUrl.trim() || null,
       online_status: assetForm.onlineStatus.trim() || null,
       windows_update: assetForm.windowsUpdate.trim() || null,
       desktop_loading_speed: assetForm.desktopLoadingSpeed.trim() || null,
@@ -3287,6 +3748,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                           <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">System details</p>
                           <p className="mt-2 font-semibold text-white">{selectedAsset.os || "Not recorded"}</p>
                           <p className="mt-1 text-sm text-slate-300">{selectedAsset.ram || "No RAM"} · {selectedAsset.storage || "No storage"}</p>
+                          <p className="mt-1 text-sm text-slate-300">GPU: {selectedAsset.gpu || "Not recorded"} · BIOS: {selectedAsset.bios_version || "Not recorded"}</p>
+                          <p className="mt-1 text-sm text-slate-300">IP: {selectedAsset.ip_address || "Not recorded"}</p>
                         </div>
                       </div>
                     </div>
@@ -3317,7 +3780,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                         <button type="button" onClick={() => setActiveTab("labels")} className="rounded-2xl bg-cyan-700 px-4 py-3 text-sm font-semibold text-white">
                           Open QR Label
                         </button>
-                        <button type="button" onClick={() => setPrintMode(true)} className="rounded-2xl bg-purple-600 px-4 py-3 text-sm font-semibold text-white">
+                        <button type="button" onClick={printSelectedAssetReport} className="rounded-2xl bg-purple-600 px-4 py-3 text-sm font-semibold text-white">
                           Print Full Specifications
                         </button>
                       </div>
@@ -3350,7 +3813,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                           <p><span className="font-semibold text-slate-900">Location:</span> {selectedAsset.location || "No location"}</p>
                           <p><span className="font-semibold text-slate-900">Supplier:</span> {selectedAsset.supplier || "-"}</p>
                           <p><span className="font-semibold text-slate-900">Purchase Date:</span> {formatDate(selectedAsset.purchase_date)}</p>
+                          <p><span className="font-semibold text-slate-900">Device Age:</span> {calculateDeviceAge(selectedAsset.purchase_date)}</p>
                           <p><span className="font-semibold text-slate-900">Warranty Expiry:</span> {formatDate(selectedAsset.warranty_expiry)}</p>
+                          <p><span className="font-semibold text-slate-900">Warranty Status:</span> {getWarrantyStatus(selectedAsset.warranty_expiry)}</p>
                           <p><span className="font-semibold text-slate-900">Created:</span> {formatDateTime(selectedAsset.created_at)}</p>
                         </div>
                       </div>
@@ -3359,8 +3824,17 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Technical specs</p>
                         <div className="mt-3 space-y-2 text-sm text-slate-700">
                           <p><span className="font-semibold text-slate-900">OS:</span> {selectedAsset.os || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Processor:</span> {selectedAsset.processor || "-"}</p>
                           <p><span className="font-semibold text-slate-900">RAM:</span> {selectedAsset.ram || "-"}</p>
                           <p><span className="font-semibold text-slate-900">Storage:</span> {selectedAsset.storage || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">GPU:</span> {selectedAsset.gpu || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Motherboard:</span> {selectedAsset.motherboard || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">BIOS:</span> {selectedAsset.bios_version || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">BIOS Date:</span> {formatDate(selectedAsset.bios_date)}</p>
+                          <p><span className="font-semibold text-slate-900">TPM:</span> {selectedAsset.tpm_status || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Hostname:</span> {selectedAsset.hostname || selectedAsset.item_name || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">IP Address:</span> {selectedAsset.ip_address || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">MAC Address:</span> {selectedAsset.mac_address || "-"}</p>
                           <p><span className="font-semibold text-slate-900">System Type:</span> {selectedAsset.system_type || "-"}</p>
                           <p><span className="font-semibold text-slate-900">Connection:</span> {selectedAsset.connection_type || "-"}</p>
                           <p><span className="font-semibold text-slate-900">MS Office:</span> {selectedAsset.ms_office || "-"}</p>
@@ -3557,11 +4031,65 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Charger" value={assetForm.charger} onChange={(e) => setAssetForm({ ...assetForm, charger: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Headset" value={assetForm.headset} onChange={(e) => setAssetForm({ ...assetForm, headset: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Storage" value={assetForm.storage} onChange={(e) => setAssetForm({ ...assetForm, storage: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="CPU / Processor" value={assetForm.processor} onChange={(e) => setAssetForm({ ...assetForm, processor: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="GPU / Graphics" value={assetForm.gpu} onChange={(e) => setAssetForm({ ...assetForm, gpu: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Motherboard" value={assetForm.motherboard} onChange={(e) => setAssetForm({ ...assetForm, motherboard: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="BIOS Version" value={assetForm.biosVersion} onChange={(e) => setAssetForm({ ...assetForm, biosVersion: e.target.value })} />
+                    <label className="rounded-2xl border border-slate-200 px-4 py-2 text-xs text-slate-500">BIOS Date<input type="date" className="mt-1 w-full text-sm text-slate-900 outline-none" value={assetForm.biosDate} onChange={(e) => setAssetForm({ ...assetForm, biosDate: e.target.value })} /></label>
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="TPM Status (for example: TPM 2.0 Enabled)" value={assetForm.tpmStatus} onChange={(e) => setAssetForm({ ...assetForm, tpmStatus: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Hostname" value={assetForm.hostname} onChange={(e) => setAssetForm({ ...assetForm, hostname: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="IP Address" value={assetForm.ipAddress} onChange={(e) => setAssetForm({ ...assetForm, ipAddress: e.target.value })} />
+                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="MAC Address" value={assetForm.macAddress} onChange={(e) => setAssetForm({ ...assetForm, macAddress: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Online Status" value={assetForm.onlineStatus} onChange={(e) => setAssetForm({ ...assetForm, onlineStatus: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Windows Update" value={assetForm.windowsUpdate} onChange={(e) => setAssetForm({ ...assetForm, windowsUpdate: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Desktop Loading Speed" value={assetForm.desktopLoadingSpeed} onChange={(e) => setAssetForm({ ...assetForm, desktopLoadingSpeed: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Booting Speed" value={assetForm.bootingSpeed} onChange={(e) => setAssetForm({ ...assetForm, bootingSpeed: e.target.value })} />
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Performance" value={assetForm.performance} onChange={(e) => setAssetForm({ ...assetForm, performance: e.target.value })} />
+                  </div>
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-4">
+                      <h3 className="font-bold text-slate-900">Device Photos</h3>
+                      <p className="mt-1 text-xs text-slate-500">Upload a front view, back view and serial/asset-label photo. Enter the Asset Tag first.</p>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {([
+                        ["front", "Front View", assetForm.photoFrontUrl],
+                        ["back", "Back View", assetForm.photoBackUrl],
+                        ["label", "Serial / Asset Label", assetForm.photoLabelUrl],
+                      ] as const).map(([slot, label, url]) => (
+                        <div key={slot} className="rounded-2xl border border-slate-200 bg-white p-3">
+                          <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-100">
+                            {url ? (
+                              <img src={url} alt={label} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="grid h-full place-items-center px-3 text-center text-xs text-slate-400">No {label.toLowerCase()} uploaded</div>
+                            )}
+                          </div>
+                          <p className="mt-3 text-sm font-semibold text-slate-800">{label}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <label className="cursor-pointer rounded-xl bg-cyan-700 px-3 py-2 text-xs font-semibold text-white">
+                              {uploadingPhotoSlot === slot ? "Uploading..." : url ? "Replace" : "Upload"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingPhotoSlot !== null}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  if (file) void handleAssetPhotoUpload(file, slot);
+                                  event.currentTarget.value = "";
+                                }}
+                              />
+                            </label>
+                            {url ? (
+                              <button type="button" onClick={() => clearAssetPhoto(slot)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
+                                Remove
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <textarea className="min-h-[100px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Notes" value={assetForm.notes} onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })} />
                   <div className="flex flex-wrap gap-3">
@@ -3778,10 +4306,10 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
             <div className="mt-6 flex justify-center gap-4 print:hidden">
               <button
-                onClick={() => window.print()}
+                onClick={printSelectedAssetReport}
                 className="rounded-2xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white"
               >
-                Print Report
+                Print One-Page Report
               </button>
               <button
                 onClick={() => setPrintMode(false)}
