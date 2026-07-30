@@ -915,10 +915,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const isAdmin = role === "admin";
 
   useEffect(() => {
-    checkUser();
+    void checkUser();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+
       if (!session?.user) {
         setRole(null);
         setAuthLoading(false);
@@ -927,7 +930,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     });
 
     return () => {
-      listener.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
