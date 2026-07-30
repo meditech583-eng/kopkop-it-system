@@ -1,0 +1,17 @@
+KOPKOP ICT ASSET MANAGEMENT SYSTEM — VERSION 3.1
+
+1. Back up your current public folder.
+2. Copy all PNG and ICO files from this package into public.
+3. Replace public/manifest.json with the included manifest.json.
+4. Apply layout-metadata-patch.txt to app/layout.tsx.
+5. Run: npm run dev
+6. Test:
+   http://localhost:3000/icon-192.png
+   http://localhost:3000/icon-512.png
+   http://localhost:3000/manifest.json
+   http://localhost:3000/favicon.ico
+7. Deploy:
+   git add app/layout.tsx public
+   git commit -m "Version 3.1 - Add official Kopkop ICT app branding"
+   git push origin main
+8. After deployment, uninstall the old PWA, refresh the live site, and reinstall it.
