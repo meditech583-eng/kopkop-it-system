@@ -522,6 +522,57 @@ function buildPrintScript() {
   `;
 }
 
+function lifecycleIcon(type: string) {
+  switch (type) {
+    case "Current Status":
+      return "✓";
+    case "Maintenance":
+      return "🔧";
+    case "Audit":
+      return "📋";
+    case "Asset Record":
+      return "📦";
+    case "Purchase":
+      return "🧾";
+    default:
+      return "•";
+  }
+}
+
+function lifecycleMarkerClass(type: string) {
+  switch (type) {
+    case "Current Status":
+      return "bg-emerald-600";
+    case "Maintenance":
+      return "bg-orange-500";
+    case "Audit":
+      return "bg-blue-600";
+    case "Asset Record":
+      return "bg-violet-600";
+    case "Purchase":
+      return "bg-slate-600";
+    default:
+      return "bg-teal-600";
+  }
+}
+
+function lifecycleAccent(type: string) {
+  switch (type) {
+    case "Current Status":
+      return "#059669";
+    case "Maintenance":
+      return "#f97316";
+    case "Audit":
+      return "#2563eb";
+    case "Asset Record":
+      return "#7c3aed";
+    case "Purchase":
+      return "#475569";
+    default:
+      return "#0f766e";
+  }
+}
+
 function StatCard({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1142,12 +1193,35 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
   const selectedAssetTimeline = useMemo(() => {
     if (!selectedAsset) return [];
+
+    const assetCreatedItem = {
+      id: `asset-created-${selectedAsset.id}`,
+      type: "Asset Record" as const,
+      date: selectedAsset.created_at,
+      title: "Asset registered in the ICT system",
+      subtitle: `${selectedAsset.asset_tag} · ${selectedAsset.category || "ICT Asset"}`,
+      notes: `Initial record created for ${selectedAsset.item_name}. Current location: ${selectedAsset.location || "Not assigned"}.`,
+      toneClass: "bg-blue-100 text-blue-700",
+    };
+
+    const purchaseItem = selectedAsset.purchase_date
+      ? {
+          id: `purchase-${selectedAsset.id}`,
+          type: "Purchase" as const,
+          date: selectedAsset.purchase_date,
+          title: "Device purchased",
+          subtitle: `${selectedAsset.supplier || "Supplier not recorded"} · ${selectedAsset.brand || "Brand not recorded"} ${selectedAsset.model || ""}`.trim(),
+          notes: `Serial number: ${selectedAsset.serial_number || "Not recorded"}. Warranty expiry: ${formatDate(selectedAsset.warranty_expiry)}.`,
+          toneClass: "bg-indigo-100 text-indigo-700",
+        }
+      : null;
+
     const auditItems = selectedAssetAudits.map((check) => ({
       id: `audit-${check.id}`,
       type: "Audit" as const,
       date: check.created_at || check.inspection_date,
       title: `${check.final_status} audit`,
-      subtitle: `${check.inspected_by} · Score ${check.health_score ?? 0}%`,
+      subtitle: `${check.inspected_by} · Score ${check.health_score ?? 0}% · ${check.priority_level || "Low"} priority`,
       notes: check.remarks || "No remarks recorded.",
       toneClass: statusPillClass(check.final_status),
     }));
@@ -1157,7 +1231,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       type: "Maintenance" as const,
       date: record.updated_at || record.created_at || record.date_reported,
       title: record.issue || "Maintenance ticket",
-      subtitle: `${record.status || "Open"} · ${record.priority || "Medium"} priority`,
+      subtitle: `${record.status || "Open"} · ${record.priority || "Medium"} priority · ${record.technician || record.reported_by || "No technician"}`,
       notes:
         record.resolution_notes ||
         record.action_taken ||
@@ -1166,7 +1240,17 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       toneClass: statusPillClass(record.status || "Open"),
     }));
 
-    return [...auditItems, ...maintenanceItems].sort(
+    const currentStateItem = {
+      id: `current-state-${selectedAsset.id}`,
+      type: "Current Status" as const,
+      date: new Date().toISOString(),
+      title: selectedAsset.status || "Status not recorded",
+      subtitle: `${selectedAsset.condition || "Condition not recorded"} condition · ${selectedAsset.healthLabel} ${selectedAsset.displayScore}%`,
+      notes: `Assigned to ${selectedAsset.assigned_to || "No user"} at ${selectedAsset.location || "No location"}. Recommendation: ${selectedAsset.recommendation}.`,
+      toneClass: statusPillClass(selectedAsset.status || selectedAsset.healthLabel),
+    };
+
+    return [currentStateItem, ...auditItems, ...maintenanceItems, ...(purchaseItem ? [purchaseItem] : []), assetCreatedItem].sort(
       (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
     );
   }, [selectedAsset, selectedAssetAudits, selectedAssetMaintenance]);
@@ -1262,6 +1346,48 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     () => ["All", ...Array.from(new Set(assets.map((a) => a.category).filter(Boolean))).sort()],
     [assets]
   );
+
+  const executiveActivity = useMemo(() => {
+    const maintenance = maintenanceRecords.map((record) => ({
+      id: `maintenance-${record.id}`,
+      type: "Maintenance",
+      title: record.issue || "Maintenance ticket updated",
+      meta: `${record.asset_tag || "Unassigned asset"} · ${record.status || "Open"}`,
+      date: record.updated_at || record.created_at || record.date_reported || "",
+      tone: "bg-orange-100 text-orange-700",
+      icon: "🔧",
+    }));
+
+    const audits = deviceChecks.map((check) => ({
+      id: `audit-${check.id}`,
+      type: "Audit",
+      title: `${check.final_status} audit`,
+      meta: `${check.asset_tag || "Unassigned asset"} · ${check.inspected_by || "ICT Staff"}`,
+      date: check.created_at || check.inspection_date || "",
+      tone: "bg-blue-100 text-blue-700",
+      icon: "📋",
+    }));
+
+    const registrations = assets.map((asset) => ({
+      id: `asset-${asset.id}`,
+      type: "Asset",
+      title: "Asset registered",
+      meta: `${asset.asset_tag} · ${asset.item_name}`,
+      date: asset.created_at || "",
+      tone: "bg-violet-100 text-violet-700",
+      icon: "📦",
+    }));
+
+    return [...maintenance, ...audits, ...registrations]
+      .filter((item) => item.date)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 7);
+  }, [maintenanceRecords, deviceChecks, assets]);
+
+  const unresolvedTickets =
+    maintenanceStats.open + maintenanceStats.inProgress + maintenanceStats.waiting;
+
+  const attentionDevices = healthBreakdown.watch + healthBreakdown.upgrade + healthBreakdown.critical;
 
   function scrollToActiveContent(tab: typeof activeTab) {
     window.setTimeout(() => {
@@ -1808,6 +1934,721 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     }
 
     printWindow.document.open();
+    printWindow.document.write(reportHtml);
+    printWindow.document.close();
+  }
+
+
+  function printAssetLifecycleReport() {
+    if (!selectedAsset) {
+      alert("Please select a device first.");
+      return;
+    }
+
+    const asset = selectedAsset;
+    const logoUrl = `${window.location.origin}/kopkop-logo.png`;
+    const qrUrl = buildQrUrl(asset.asset_tag.trim(), 700);
+    const generatedAt = new Date();
+    const events = selectedAssetTimeline;
+    const reportNumber = `LC-${generatedAt.getFullYear()}-${String(asset.id).padStart(4, "0")}`;
+
+    const eventRows = events
+      .map((item) => {
+        const accent = lifecycleAccent(item.type);
+        return `
+          <div class="event">
+            <div class="marker" style="background:${accent}">${safeHtml(lifecycleIcon(item.type))}</div>
+            <div class="event-body" style="border-left:4px solid ${accent}">
+              <div class="event-top">
+                <div>
+                  <div class="event-type" style="color:${accent}">${safeHtml(item.type)}</div>
+                  <div class="event-title">${safeHtml(item.title)}</div>
+                </div>
+                <div class="event-date">${safeHtml(formatDateTime(item.date))}</div>
+              </div>
+              <div class="event-subtitle">${safeHtml(item.subtitle)}</div>
+              <div class="event-notes">${safeHtml(item.notes)}</div>
+            </div>
+          </div>`;
+      })
+      .join("");
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${safeHtml(asset.asset_tag)} - Asset Lifecycle Report</title>
+          <style>
+            @page { size: A4; margin: 12mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            body { margin: 0; font-family: Arial, sans-serif; color: #0f172a; background: #fff; }
+            .page { position: relative; min-height: 270mm; }
+            .watermark { position: fixed; inset: 28% 20%; opacity: .035; object-fit: contain; width: 60%; z-index: 0; }
+            .content { position: relative; z-index: 1; }
+            .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #0f766e; padding-bottom: 8px; }
+            .brand { display: flex; align-items: center; gap: 12px; }
+            .logo { width: 58px; height: 58px; object-fit: contain; }
+            .school { font-size: 18px; font-weight: 800; letter-spacing: .04em; }
+            .system { margin-top: 2px; color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+            .qr { width: 62px; height: 62px; padding: 3px; border: 1px solid #cbd5e1; border-radius: 8px; }
+            .titlebar { margin-top: 12px; background: #0f172a; color: white; border-radius: 12px; padding: 14px 16px; display: flex; justify-content: space-between; gap: 18px; }
+            .title { font-size: 20px; font-weight: 800; }
+            .subtitle { margin-top: 4px; font-size: 11px; color: #cbd5e1; }
+            .report-meta { text-align: right; font-size: 10px; line-height: 1.55; }
+            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+            .card { border: 1px solid #dbe3ec; border-radius: 9px; padding: 9px; background: #f8fafc; }
+            .label { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .08em; }
+            .value { margin-top: 4px; font-size: 11px; font-weight: 700; word-break: break-word; }
+            .section-title { margin: 16px 0 9px; font-size: 11px; font-weight: 800; color: #0f766e; text-transform: uppercase; letter-spacing: .12em; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; }
+            .timeline { position: relative; padding-left: 18px; }
+            .timeline:before { content: ""; position: absolute; left: 12px; top: 7px; bottom: 7px; width: 2px; background: #99f6e4; }
+            .event { position: relative; display: grid; grid-template-columns: 26px 1fr; gap: 10px; margin-bottom: 10px; break-inside: avoid; }
+            .marker { position: relative; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: #0f766e; color: white; display: grid; place-items: center; font-size: 8px; font-weight: 800; }
+            .event-body { border: 1px solid #dbe3ec; border-radius: 9px; padding: 9px 11px; background: white; }
+            .event-top { display: flex; justify-content: space-between; gap: 12px; }
+            .event-type { color: #0f766e; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .09em; }
+            .event-title { margin-top: 2px; font-size: 11px; font-weight: 800; }
+            .event-date { color: #64748b; font-size: 9px; white-space: nowrap; }
+            .event-subtitle { margin-top: 5px; font-size: 9px; font-weight: 700; color: #334155; }
+            .event-notes { margin-top: 4px; font-size: 9px; line-height: 1.45; color: #475569; white-space: pre-wrap; }
+            .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 20px; break-inside: avoid; }
+            .signature { padding-top: 28px; border-top: 1px solid #64748b; font-size: 9px; color: #475569; }
+            .footer { margin-top: 14px; border-top: 1px solid #cbd5e1; padding-top: 6px; display: flex; justify-content: space-between; font-size: 8px; color: #64748b; }
+          </style>
+        </head>
+        <body>
+          <img class="watermark" src="${safeHtml(logoUrl)}" alt="" />
+          <div class="page content">
+            <div class="header">
+              <div class="brand">
+                <img class="logo" src="${safeHtml(logoUrl)}" alt="Kopkop College" />
+                <div>
+                  <div class="school">KOPKOP COLLEGE</div>
+                  <div class="system">ICT Asset Management System</div>
+                </div>
+              </div>
+              <img class="qr" src="${safeHtml(qrUrl)}" alt="Asset QR Code" />
+            </div>
+
+            <div class="titlebar">
+              <div>
+                <div class="title">Asset Lifecycle Report</div>
+                <div class="subtitle">Complete chronological history for ${safeHtml(asset.asset_tag)} · ${safeHtml(asset.item_name)}</div>
+              </div>
+              <div class="report-meta">
+                <div><strong>Report:</strong> ${safeHtml(reportNumber)}</div>
+                <div><strong>Generated:</strong> ${safeHtml(formatDateTime(generatedAt.toISOString()))}</div>
+                <div><strong>Prepared by:</strong> ${safeHtml(user?.email || "ICT Department")}</div>
+              </div>
+            </div>
+
+            <div class="summary">
+              <div class="card"><div class="label">Asset Tag</div><div class="value">${safeHtml(asset.asset_tag)}</div></div>
+              <div class="card"><div class="label">Device</div><div class="value">${safeHtml(`${asset.brand || "-"} ${asset.model || ""}`.trim())}</div></div>
+              <div class="card"><div class="label">Current Status</div><div class="value">${safeHtml(asset.status || "-")}</div></div>
+              <div class="card"><div class="label">Health</div><div class="value">${safeHtml(`${asset.displayScore}% · ${asset.healthLabel}`)}</div></div>
+              <div class="card"><div class="label">Serial Number</div><div class="value">${safeHtml(asset.serial_number || "-")}</div></div>
+              <div class="card"><div class="label">Assigned To</div><div class="value">${safeHtml(asset.assigned_to || "-")}</div></div>
+              <div class="card"><div class="label">Location</div><div class="value">${safeHtml(asset.location || "-")}</div></div>
+              <div class="card"><div class="label">Recorded Events</div><div class="value">${events.length}</div></div>
+            </div>
+
+            <div class="section-title">Lifecycle Timeline</div>
+            <div class="timeline">${eventRows}</div>
+
+            <div class="signatures">
+              <div class="signature">Prepared by · ICT Technician</div>
+              <div class="signature">Verified by · IT Manager</div>
+              <div class="signature">Approved by · Management</div>
+            </div>
+
+            <div class="footer">
+              <span>CONFIDENTIAL · INTERNAL ICT ASSET RECORD · Version 3.0</span>
+              <span>${safeHtml(asset.asset_tag)} · ${events.length} lifecycle events</span>
+            </div>
+          </div>
+          ${buildPrintScript()}
+        </body>
+      </html>`;
+
+    const printWindow = window.open("", "_blank", "width=960,height=1000");
+    if (!printWindow) {
+      alert("Please allow pop-ups so the lifecycle report can print.");
+      return;
+    }
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
+  function printMaintenanceReport(record: MaintenanceRecord) {
+    const relatedAsset = record.asset_id ? maintenanceAssetsById.get(record.asset_id) || null : null;
+    const generatedAt = new Date();
+    const reportYear = new Date(record.date_reported || record.created_at || Date.now()).getFullYear();
+    const ticketNumber = `MT-${reportYear}-${String(record.id).padStart(4, "0")}`;
+    const logoUrl = `${window.location.origin}/kopkop-logo.png`;
+    const qrValue = (record.asset_tag || relatedAsset?.asset_tag || ticketNumber).trim();
+    const qrUrl = buildQrUrl(qrValue, 700);
+
+    const status = record.status || "Open";
+    const statusTone =
+      status === "Completed"
+        ? { accent: "#15803d", soft: "#dcfce7" }
+        : status === "Cancelled"
+          ? { accent: "#b91c1c", soft: "#fee2e2" }
+          : status === "Waiting for Parts"
+            ? { accent: "#c2410c", soft: "#ffedd5" }
+            : status === "In Progress"
+              ? { accent: "#a16207", soft: "#fef3c7" }
+              : { accent: "#0369a1", soft: "#e0f2fe" };
+
+    const photoUrls = [
+      { label: "Front View", url: relatedAsset?.photo_front_url },
+      { label: "Back View", url: relatedAsset?.photo_back_url },
+      { label: "Serial / Asset Label", url: relatedAsset?.photo_label_url },
+    ].filter((photo) => Boolean(photo.url));
+
+    const reportHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${safeHtml(ticketNumber)} - Maintenance Report</title>
+          <style>
+            @page { size: A4 portrait; margin: 10mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 10px;
+              line-height: 1.35;
+            }
+            body { position: relative; }
+            .watermark {
+              position: fixed;
+              inset: 23% 20% auto 20%;
+              width: 60%;
+              opacity: 0.045;
+              z-index: 0;
+              pointer-events: none;
+            }
+            .report { position: relative; z-index: 1; max-width: 190mm; margin: 0 auto; }
+            .header {
+              display: grid;
+              grid-template-columns: 28mm 1fr 38mm;
+              gap: 5mm;
+              align-items: center;
+              border-bottom: 3px solid #0f3b63;
+              padding-bottom: 4mm;
+            }
+            .logo { width: 25mm; height: 25mm; object-fit: contain; }
+            .school { font-size: 21px; font-weight: 900; color: #0f3b63; letter-spacing: .02em; }
+            .system { margin-top: 1mm; font-size: 10px; font-weight: 700; color: #475569; }
+            .document-title { margin-top: 2mm; font-size: 13px; font-weight: 900; letter-spacing: .12em; color: #0f172a; }
+            .header-meta { text-align: right; color: #475569; font-size: 8.5px; }
+            .ticket-banner {
+              margin-top: 4mm;
+              padding: 4mm;
+              border-radius: 4mm;
+              background: #0f3b63;
+              color: #ffffff;
+              display: grid;
+              grid-template-columns: 1fr auto;
+              gap: 6mm;
+              align-items: center;
+            }
+            .ticket-title { font-size: 18px; font-weight: 900; }
+            .ticket-subtitle { margin-top: 1mm; color: #dbeafe; font-size: 9px; }
+            .status-pill {
+              display: inline-block;
+              border-radius: 999px;
+              padding: 2.5mm 4mm;
+              background: ${statusTone.soft};
+              color: ${statusTone.accent};
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: .08em;
+            }
+            .summary-grid {
+              margin-top: 4mm;
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 2mm;
+            }
+            .summary-card {
+              border: 1px solid #cbd5e1;
+              border-radius: 3mm;
+              padding: 3mm;
+              min-height: 17mm;
+              background: #f8fafc;
+            }
+            .label { color: #64748b; font-size: 7.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+            .value { margin-top: 1mm; font-size: 10px; font-weight: 800; color: #0f172a; overflow-wrap: anywhere; }
+            .section {
+              margin-top: 4mm;
+              border: 1px solid #cbd5e1;
+              border-radius: 3mm;
+              overflow: hidden;
+              break-inside: avoid;
+            }
+            .section-title {
+              padding: 2.5mm 3mm;
+              background: #eaf1f7;
+              border-bottom: 1px solid #cbd5e1;
+              color: #0f3b63;
+              font-size: 9px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: .08em;
+            }
+            .section-body {
+              min-height: 13mm;
+              padding: 3mm;
+              white-space: pre-wrap;
+              overflow-wrap: anywhere;
+              font-size: 9.5px;
+            }
+            .asset-grid {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 2mm 5mm;
+            }
+            .asset-row { display: grid; grid-template-columns: 34mm 1fr; gap: 2mm; }
+            .asset-row strong { color: #475569; }
+            .photos {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 3mm;
+            }
+            .photo-card { text-align: center; }
+            .photo-card img {
+              width: 100%;
+              height: 35mm;
+              object-fit: contain;
+              background: #f8fafc;
+              border: 1px solid #cbd5e1;
+              border-radius: 2mm;
+              padding: 1mm;
+            }
+            .photo-label { margin-top: 1mm; color: #475569; font-size: 8px; font-weight: 700; }
+            .signatures {
+              margin-top: 8mm;
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 7mm;
+              break-inside: avoid;
+            }
+            .signature-line { margin-top: 12mm; border-top: 1px solid #334155; padding-top: 1.5mm; text-align: center; }
+            .signature-role { font-weight: 900; }
+            .signature-help { margin-top: 1mm; color: #64748b; font-size: 7.5px; }
+            .footer {
+              margin-top: 6mm;
+              padding-top: 2mm;
+              border-top: 1px solid #94a3b8;
+              display: flex;
+              justify-content: space-between;
+              gap: 4mm;
+              color: #64748b;
+              font-size: 7.5px;
+            }
+            .qr { width: 23mm; height: 23mm; object-fit: contain; background: #ffffff; padding: 1mm; border-radius: 2mm; }
+          </style>
+        </head>
+        <body>
+          <img class="watermark" src="${safeHtml(logoUrl)}" alt="" />
+          <main class="report">
+            <header class="header">
+              <img class="logo" src="${safeHtml(logoUrl)}" alt="Kopkop College Logo" />
+              <div>
+                <div class="school">KOPKOP COLLEGE</div>
+                <div class="system">ICT Asset, Device Health & Audit System</div>
+                <div class="document-title">ICT MAINTENANCE REPORT</div>
+              </div>
+              <div class="header-meta">
+                <div><strong>Generated:</strong> ${safeHtml(generatedAt.toLocaleString())}</div>
+                <div><strong>Document:</strong> ${safeHtml(ticketNumber)}</div>
+                <div><strong>Version:</strong> 2.1</div>
+              </div>
+            </header>
+
+            <section class="ticket-banner">
+              <div>
+                <div class="ticket-title">${safeHtml(ticketNumber)}</div>
+                <div class="ticket-subtitle">${safeHtml(record.asset_tag || relatedAsset?.asset_tag || "Unlinked asset")} · ${safeHtml(record.item_name || relatedAsset?.item_name || "Maintenance ticket")}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:4mm;">
+                <div class="status-pill">${safeHtml(status)}</div>
+                <img class="qr" src="${safeHtml(qrUrl)}" alt="Asset QR Code" />
+              </div>
+            </section>
+
+            <section class="summary-grid">
+              <div class="summary-card"><div class="label">Priority</div><div class="value">${safeHtml(record.priority || "Medium")}</div></div>
+              <div class="summary-card"><div class="label">Date Reported</div><div class="value">${safeHtml(formatDate(record.date_reported || record.created_at))}</div></div>
+              <div class="summary-card"><div class="label">Repair Date</div><div class="value">${safeHtml(formatDate(record.repair_date))}</div></div>
+              <div class="summary-card"><div class="label">Closed Date</div><div class="value">${safeHtml(formatDateTime(record.closed_date))}</div></div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Asset & Assignment Information</div>
+              <div class="section-body asset-grid">
+                <div class="asset-row"><strong>Asset Tag:</strong><span>${safeHtml(record.asset_tag || relatedAsset?.asset_tag || "-")}</span></div>
+                <div class="asset-row"><strong>Computer / Item:</strong><span>${safeHtml(record.item_name || relatedAsset?.item_name || "-")}</span></div>
+                <div class="asset-row"><strong>Category:</strong><span>${safeHtml(relatedAsset?.category || "-")}</span></div>
+                <div class="asset-row"><strong>Brand / Model:</strong><span>${safeHtml([relatedAsset?.brand, relatedAsset?.model].filter(Boolean).join(" ") || "-")}</span></div>
+                <div class="asset-row"><strong>Serial Number:</strong><span>${safeHtml(relatedAsset?.serial_number || "-")}</span></div>
+                <div class="asset-row"><strong>Location:</strong><span>${safeHtml(relatedAsset?.location || "-")}</span></div>
+                <div class="asset-row"><strong>Assigned User:</strong><span>${safeHtml(record.assigned_to || relatedAsset?.assigned_to || "-")}</span></div>
+                <div class="asset-row"><strong>Reported By:</strong><span>${safeHtml(record.reported_by || "-")}</span></div>
+                <div class="asset-row"><strong>Technician:</strong><span>${safeHtml(record.technician || "-")}</span></div>
+                <div class="asset-row"><strong>Previous Asset Status:</strong><span>${safeHtml(record.previous_asset_status || "-")}</span></div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Problem Reported</div>
+              <div class="section-body">${safeHtml(record.issue || "No issue description recorded.")}</div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Initial Diagnosis / Notes</div>
+              <div class="section-body">${safeHtml(record.notes || "No initial notes recorded.")}</div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Action Taken / Work Performed</div>
+              <div class="section-body">${safeHtml(record.action_taken || "No action taken recorded.")}</div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Resolution / Current Outcome</div>
+              <div class="section-body">${safeHtml(record.resolution_notes || "No resolution recorded.")}</div>
+            </section>
+
+            ${
+              photoUrls.length
+                ? `<section class="section">
+                    <div class="section-title">Photographic Asset Evidence</div>
+                    <div class="section-body">
+                      <div class="photos">
+                        ${photoUrls
+                          .map(
+                            (photo) => `<div class="photo-card">
+                              <img src="${safeHtml(photo.url)}" alt="${safeHtml(photo.label)}" />
+                              <div class="photo-label">${safeHtml(photo.label)}</div>
+                            </div>`
+                          )
+                          .join("")}
+                      </div>
+                    </div>
+                  </section>`
+                : ""
+            }
+
+            <section class="signatures">
+              <div><div class="signature-line"><div class="signature-role">${safeHtml(record.technician || "ICT Technician")}</div><div class="signature-help">Technician Signature / Date</div></div></div>
+              <div><div class="signature-line"><div class="signature-role">IT Manager</div><div class="signature-help">Verified By / Signature / Date</div></div></div>
+              <div><div class="signature-line"><div class="signature-role">Assigned User / Department</div><div class="signature-help">Device Received / Signature / Date</div></div></div>
+            </section>
+
+            <footer class="footer">
+              <span>CONFIDENTIAL – INTERNAL ICT MAINTENANCE RECORD</span>
+              <span>${safeHtml(ticketNumber)} · ${safeHtml(record.asset_tag || relatedAsset?.asset_tag || "-")}</span>
+            </footer>
+          </main>
+          ${buildPrintScript()}
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1000,height=900");
+    if (!printWindow) {
+      alert("Please allow pop-ups so the maintenance report can print.");
+      return;
+    }
+    printWindow.document.write(reportHtml);
+    printWindow.document.close();
+  }
+
+  function printAuditReport(check: DeviceStatusCheck) {
+    const relatedAsset = check.asset_id ? maintenanceAssetsById.get(check.asset_id) || null : null;
+    const generatedAt = new Date();
+    const reportYear = new Date(check.inspection_date || check.created_at || Date.now()).getFullYear();
+    const auditNumber = `AUD-${reportYear}-${String(check.id).padStart(4, "0")}`;
+    const logoUrl = `${window.location.origin}/kopkop-logo.png`;
+    const qrValue = (check.asset_tag || relatedAsset?.asset_tag || auditNumber).trim();
+    const qrUrl = buildQrUrl(qrValue, 700);
+    const score = Math.max(0, Math.min(100, check.health_score ?? 0));
+    const scoreTone =
+      score >= 85
+        ? { accent: "#15803d", soft: "#dcfce7", label: "Healthy" }
+        : score >= 65
+          ? { accent: "#a16207", soft: "#fef3c7", label: "Watch" }
+          : score >= 40
+            ? { accent: "#c2410c", soft: "#ffedd5", label: "Needs Upgrade" }
+            : { accent: "#b91c1c", soft: "#fee2e2", label: "Critical" };
+
+    const photoUrls = [
+      { label: "Front View", url: relatedAsset?.photo_front_url },
+      { label: "Back View", url: relatedAsset?.photo_back_url },
+      { label: "Serial / Asset Label", url: relatedAsset?.photo_label_url },
+    ].filter((photo) => Boolean(photo.url));
+
+    const reportHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${safeHtml(auditNumber)} - Audit Report</title>
+          <style>
+            @page { size: A4 portrait; margin: 10mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 10px;
+              line-height: 1.35;
+            }
+            .watermark {
+              position: fixed;
+              inset: 23% 20% auto 20%;
+              width: 60%;
+              opacity: 0.045;
+              z-index: 0;
+              pointer-events: none;
+            }
+            .report { position: relative; z-index: 1; max-width: 190mm; margin: 0 auto; }
+            .header {
+              display: grid;
+              grid-template-columns: 28mm 1fr 38mm;
+              gap: 5mm;
+              align-items: center;
+              border-bottom: 3px solid #0f3b63;
+              padding-bottom: 4mm;
+            }
+            .logo { width: 25mm; height: 25mm; object-fit: contain; }
+            .school { font-size: 21px; font-weight: 900; color: #0f3b63; letter-spacing: .02em; }
+            .system { margin-top: 1mm; font-size: 10px; font-weight: 700; color: #475569; }
+            .document-title { margin-top: 2mm; font-size: 13px; font-weight: 900; letter-spacing: .12em; color: #0f172a; }
+            .header-meta { text-align: right; color: #475569; font-size: 8.5px; }
+            .audit-banner {
+              margin-top: 4mm;
+              padding: 4mm;
+              border-radius: 4mm;
+              background: #0f3b63;
+              color: #ffffff;
+              display: grid;
+              grid-template-columns: 1fr auto;
+              gap: 6mm;
+              align-items: center;
+            }
+            .audit-title { font-size: 18px; font-weight: 900; }
+            .audit-subtitle { margin-top: 1mm; color: #dbeafe; font-size: 9px; }
+            .score-block { display: flex; align-items: center; gap: 4mm; }
+            .score-pill {
+              display: grid;
+              place-items: center;
+              width: 25mm;
+              height: 25mm;
+              border-radius: 50%;
+              background: ${scoreTone.soft};
+              color: ${scoreTone.accent};
+              border: 2px solid ${scoreTone.accent};
+              font-weight: 900;
+              font-size: 13px;
+            }
+            .summary-grid {
+              margin-top: 4mm;
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 2mm;
+            }
+            .summary-card {
+              border: 1px solid #cbd5e1;
+              border-radius: 3mm;
+              padding: 3mm;
+              min-height: 17mm;
+              background: #f8fafc;
+            }
+            .label { color: #64748b; font-size: 7.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+            .value { margin-top: 1mm; font-size: 10px; font-weight: 800; color: #0f172a; overflow-wrap: anywhere; }
+            .section {
+              margin-top: 4mm;
+              border: 1px solid #cbd5e1;
+              border-radius: 3mm;
+              overflow: hidden;
+              break-inside: avoid;
+            }
+            .section-title {
+              padding: 2.5mm 3mm;
+              background: #eaf1f7;
+              border-bottom: 1px solid #cbd5e1;
+              color: #0f3b63;
+              font-size: 9px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: .08em;
+            }
+            .section-body { padding: 3mm; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 9.5px; }
+            .asset-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2mm 5mm; }
+            .asset-row { display: grid; grid-template-columns: 34mm 1fr; gap: 2mm; }
+            .asset-row strong { color: #475569; }
+            .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+            .photo-card { text-align: center; }
+            .photo-card img {
+              width: 100%;
+              height: 35mm;
+              object-fit: contain;
+              background: #f8fafc;
+              border: 1px solid #cbd5e1;
+              border-radius: 2mm;
+              padding: 1mm;
+            }
+            .photo-label { margin-top: 1mm; color: #475569; font-size: 8px; font-weight: 700; }
+            .signatures {
+              margin-top: 8mm;
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 7mm;
+              break-inside: avoid;
+            }
+            .signature-line { margin-top: 12mm; border-top: 1px solid #334155; padding-top: 1.5mm; text-align: center; }
+            .signature-role { font-weight: 900; }
+            .signature-help { margin-top: 1mm; color: #64748b; font-size: 7.5px; }
+            .footer {
+              margin-top: 6mm;
+              padding-top: 2mm;
+              border-top: 1px solid #94a3b8;
+              display: flex;
+              justify-content: space-between;
+              gap: 4mm;
+              color: #64748b;
+              font-size: 7.5px;
+            }
+            .qr { width: 23mm; height: 23mm; object-fit: contain; background: #ffffff; padding: 1mm; border-radius: 2mm; }
+          </style>
+        </head>
+        <body>
+          <img class="watermark" src="${safeHtml(logoUrl)}" alt="" />
+          <main class="report">
+            <header class="header">
+              <img class="logo" src="${safeHtml(logoUrl)}" alt="Kopkop College Logo" />
+              <div>
+                <div class="school">KOPKOP COLLEGE</div>
+                <div class="system">ICT Asset, Device Health & Audit System</div>
+                <div class="document-title">ICT DEVICE AUDIT REPORT</div>
+              </div>
+              <div class="header-meta">
+                <div><strong>Generated:</strong> ${safeHtml(generatedAt.toLocaleString())}</div>
+                <div><strong>Document:</strong> ${safeHtml(auditNumber)}</div>
+                <div><strong>Version:</strong> 2.1</div>
+              </div>
+            </header>
+
+            <section class="audit-banner">
+              <div>
+                <div class="audit-title">${safeHtml(auditNumber)}</div>
+                <div class="audit-subtitle">${safeHtml(check.asset_tag || relatedAsset?.asset_tag || "Unlinked asset")} · ${safeHtml(check.item_name || relatedAsset?.item_name || "Device audit")}</div>
+              </div>
+              <div class="score-block">
+                <div class="score-pill">${safeHtml(score)}%</div>
+                <img class="qr" src="${safeHtml(qrUrl)}" alt="Asset QR Code" />
+              </div>
+            </section>
+
+            <section class="summary-grid">
+              <div class="summary-card"><div class="label">Final Status</div><div class="value">${safeHtml(check.final_status)}</div></div>
+              <div class="summary-card"><div class="label">Priority</div><div class="value">${safeHtml(check.priority_level || "Low")}</div></div>
+              <div class="summary-card"><div class="label">Health Classification</div><div class="value">${safeHtml(scoreTone.label)}</div></div>
+              <div class="summary-card"><div class="label">Issue Detected</div><div class="value">${safeHtml(check.issue_detected ? "Yes" : "No")}</div></div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Asset & Inspection Information</div>
+              <div class="section-body asset-grid">
+                <div class="asset-row"><strong>Asset Tag:</strong><span>${safeHtml(check.asset_tag || relatedAsset?.asset_tag || "-")}</span></div>
+                <div class="asset-row"><strong>Computer / Item:</strong><span>${safeHtml(check.item_name || relatedAsset?.item_name || "-")}</span></div>
+                <div class="asset-row"><strong>Category:</strong><span>${safeHtml(check.category || relatedAsset?.category || "-")}</span></div>
+                <div class="asset-row"><strong>Brand / Model:</strong><span>${safeHtml([relatedAsset?.brand, relatedAsset?.model].filter(Boolean).join(" ") || "-")}</span></div>
+                <div class="asset-row"><strong>Serial Number:</strong><span>${safeHtml(relatedAsset?.serial_number || "-")}</span></div>
+                <div class="asset-row"><strong>Inspection Date:</strong><span>${safeHtml(formatDate(check.inspection_date))}</span></div>
+                <div class="asset-row"><strong>Inspected By:</strong><span>${safeHtml(check.inspected_by || "-")}</span></div>
+                <div class="asset-row"><strong>Assigned User:</strong><span>${safeHtml(check.assigned_to || relatedAsset?.assigned_to || "-")}</span></div>
+                <div class="asset-row"><strong>Division:</strong><span>${safeHtml(check.division || "-")}</span></div>
+                <div class="asset-row"><strong>Department:</strong><span>${safeHtml(check.department || "-")}</span></div>
+                <div class="asset-row"><strong>Office / Area:</strong><span>${safeHtml(check.office_area || check.location || relatedAsset?.location || "-")}</span></div>
+                <div class="asset-row"><strong>Assigned Role:</strong><span>${safeHtml(check.assigned_role || "-")}</span></div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Audit Findings / Remarks</div>
+              <div class="section-body">${safeHtml(check.remarks || "No remarks recorded.")}</div>
+            </section>
+
+            <section class="section">
+              <div class="section-title">Technical Snapshot</div>
+              <div class="section-body asset-grid">
+                <div class="asset-row"><strong>Operating System:</strong><span>${safeHtml(relatedAsset?.os || "-")}</span></div>
+                <div class="asset-row"><strong>Processor:</strong><span>${safeHtml(relatedAsset?.processor || "-")}</span></div>
+                <div class="asset-row"><strong>RAM:</strong><span>${safeHtml(relatedAsset?.ram || "-")}</span></div>
+                <div class="asset-row"><strong>Storage:</strong><span>${safeHtml(relatedAsset?.storage || "-")}</span></div>
+                <div class="asset-row"><strong>TPM:</strong><span>${safeHtml(relatedAsset?.tpm_status || "-")}</span></div>
+                <div class="asset-row"><strong>Windows Update:</strong><span>${safeHtml(relatedAsset?.windows_update || "-")}</span></div>
+                <div class="asset-row"><strong>Online Status:</strong><span>${safeHtml(relatedAsset?.online_status || "-")}</span></div>
+                <div class="asset-row"><strong>Performance:</strong><span>${safeHtml(relatedAsset?.performance || "-")}</span></div>
+              </div>
+            </section>
+
+            ${
+              photoUrls.length
+                ? `<section class="section">
+                    <div class="section-title">Photographic Asset Evidence</div>
+                    <div class="section-body">
+                      <div class="photos">
+                        ${photoUrls
+                          .map(
+                            (photo) => `<div class="photo-card">
+                              <img src="${safeHtml(photo.url)}" alt="${safeHtml(photo.label)}" />
+                              <div class="photo-label">${safeHtml(photo.label)}</div>
+                            </div>`
+                          )
+                          .join("")}
+                      </div>
+                    </div>
+                  </section>`
+                : ""
+            }
+
+            <section class="signatures">
+              <div><div class="signature-line"><div class="signature-role">${safeHtml(check.inspected_by || "ICT Auditor")}</div><div class="signature-help">Inspector Signature / Date</div></div></div>
+              <div><div class="signature-line"><div class="signature-role">IT Manager</div><div class="signature-help">Verified By / Signature / Date</div></div></div>
+              <div><div class="signature-line"><div class="signature-role">Department Representative</div><div class="signature-help">Acknowledged By / Signature / Date</div></div></div>
+            </section>
+
+            <footer class="footer">
+              <span>CONFIDENTIAL – INTERNAL ICT AUDIT RECORD</span>
+              <span>${safeHtml(auditNumber)} · ${safeHtml(check.asset_tag || relatedAsset?.asset_tag || "-")}</span>
+            </footer>
+          </main>
+          ${buildPrintScript()}
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1000,height=900");
+    if (!printWindow) {
+      alert("Please allow pop-ups so the audit report can print.");
+      return;
+    }
     printWindow.document.write(reportHtml);
     printWindow.document.close();
   }
@@ -2884,211 +3725,313 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 pb-28 text-slate-900 md:pb-0">
-      <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
-        <div className="rounded-[28px] bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-900 p-6 text-white shadow-xl">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">KOPKOP College</p>
-              <h1 className="mt-2 text-3xl font-bold sm:text-4xl">ICT Asset, Device Health & Audit System</h1>
-              <p className="mt-3 max-w-3xl text-sm text-slate-200 sm:text-base">
-                Centralized inventory for desktops, laptops, device specifications, dashboard graphs, barcode and QR scanning, label printing, audit results, and PDF reporting.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <button type="button" onClick={exportSummaryPdf} className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-900">
-                Export Summary PDF
-              </button>
-              <button type="button" onClick={exportInventoryPdf} className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white">
-                Export Inventory PDF
-              </button>
-              <button type="button" onClick={exportAlertsPdf} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
-                Export Alerts PDF
-              </button>
-              <button type="button" onClick={() => refreshAll(true)} className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white">
-                {refreshing ? "Refreshing..." : "Refresh Data"}
-              </button>
-              <button type="button" onClick={handleLogout} className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white">
-                Logout
-              </button>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-200">
-            <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="bg-white/10 text-white" />
-            <Badge text={`Assets: ${stats.total}`} className="bg-white/10 text-white" />
-            <Badge text={`Average score: ${stats.avgScore}%`} className="bg-white/10 text-white" />
-            <Badge text={scannerSupported ? "Camera scanner supported" : "Manual scan available"} className="bg-white/10 text-white" />
-            <Badge text={`Role: ${role || "staff"}`} className="bg-white/10 text-white" />
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-3 md:hidden">
-          <div className="rounded-3xl border border-cyan-100 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Mobile Technician Mode</p>
-            <h2 className="mt-1 text-xl font-bold text-slate-900">Quick field actions</h2>
-            <p className="mt-1 text-sm text-slate-500">Use these while walking around campus. Scan opens the camera immediately.</p>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => openMobileTab("scan")} className="rounded-2xl bg-cyan-700 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
-                <span className="block text-2xl">📷</span>
-                Scan Device
-              </button>
-              <button type="button" onClick={() => openMobileTab("inventory")} className="rounded-2xl bg-slate-900 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
-                <span className="block text-2xl">📦</span>
-                Assets
-              </button>
-              <button type="button" onClick={() => openMobileTab("maintenance")} className="rounded-2xl bg-amber-500 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
-                <span className="block text-2xl">🛠️</span>
-                Maintenance
-              </button>
-              <button type="button" onClick={() => openMobileTab("dashboard")} className="rounded-2xl bg-emerald-600 px-4 py-4 text-left text-sm font-bold text-white shadow-sm">
-                <span className="block text-2xl">📊</span>
-                Dashboard
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div id="tab-dashboard" className="scroll-mt-24 mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
-          <StatCard label="Total Assets" value={stats.total} hint="All records in it_assets" />
-          <StatCard label="In Use" value={stats.inUse} hint="Currently assigned or active" />
-          <StatCard label="Average Health" value={`${stats.avgScore}%`} hint="Based on specs and latest audits" />
-          <StatCard label="Slow Devices" value={stats.slowDevices} hint="Boot speed flagged as slow" />
-          <StatCard label="Needs Updates" value={stats.outdated} hint="Windows update not current" />
-          <StatCard label="Poor Performance" value={stats.poorPerformance} hint="Performance field marked poor" />
-          <StatCard label="Needs Upgrade" value={stats.needsUpgrade} hint="Health score between 40% and 64%" />
-          <StatCard label="Critical" value={stats.critical} hint="Health score below 40%" />
-        </div>
-
-        <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle title="Dashboard graphs" subtitle="Quick visual view of device health, locations, and category distribution." />
-            <div className="grid gap-4 lg:grid-cols-2">
-              <DonutRing value={healthBreakdown.healthy} total={stats.total} label="Healthy devices" tone="emerald" />
-              <DonutRing value={healthBreakdown.critical} total={stats.total} label="Critical devices" tone="red" />
-              <DonutRing value={stats.outdated} total={stats.total} label="Needs Windows updates" tone="amber" />
-              <DonutRing value={stats.slowDevices} total={stats.total} label="Slow boot devices" tone="orange" />
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle title="Performance distribution" subtitle="How devices are currently rated from your imported performance field." />
-            <div className="space-y-4">
-              <MiniBar label="Good" value={performanceGraphData.good} max={stats.total} tone="emerald" />
-              <MiniBar label="Fair" value={performanceGraphData.fair} max={stats.total} tone="amber" />
-              <MiniBar label="Poor" value={performanceGraphData.poor} max={stats.total} tone="red" />
-              <MiniBar label="No rating yet" value={performanceGraphData.unknown} max={stats.total} tone="slate" />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-6 xl:grid-cols-2">
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle title="Assets by department / location" subtitle="Top locations with the highest number of registered devices." />
-            <div className="space-y-4">
-              {departmentGraphData.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No department data yet.</div>
-              ) : (
-                departmentGraphData.map((item) => (
-                  <MiniBar key={item.label} label={item.label} value={item.value} max={graphMaxDepartment} tone="blue" />
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle title="Assets by category" subtitle="Quick count of desktops, laptops, printers, and other device types." />
-            <div className="space-y-4">
-              {categoryGraphData.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No category data yet.</div>
-              ) : (
-                categoryGraphData.map((item) => (
-                  <MiniBar key={item.label} label={item.label} value={item.value} max={graphMaxCategory} tone="emerald" />
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle title="Health indicators" subtitle="Automatic device health labels based on performance, speed, updates, and condition." />
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Healthy</p>
-                <p className="mt-2 text-2xl font-bold text-emerald-900">{healthBreakdown.healthy}</p>
-                <p className="mt-1 text-xs text-emerald-700">Ready for normal use</p>
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Watch</p>
-                <p className="mt-2 text-2xl font-bold text-amber-900">{healthBreakdown.watch}</p>
-                <p className="mt-1 text-xs text-amber-700">Monitor these devices</p>
-              </div>
-              <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Needs Upgrade</p>
-                <p className="mt-2 text-2xl font-bold text-orange-900">{healthBreakdown.upgrade}</p>
-                <p className="mt-1 text-xs text-orange-700">Likely RAM or storage upgrade</p>
-              </div>
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Critical</p>
-                <p className="mt-2 text-2xl font-bold text-red-900">{healthBreakdown.critical}</p>
-                <p className="mt-1 text-xs text-red-700">Needs urgent IT attention</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle title="Priority alerts" subtitle="Top devices that need follow-up first." />
-            <div className="space-y-3">
-              {enrichedAssets
-                .filter((asset) => asset.displayScore < 65 || asset.alerts.length > 0)
-                .sort((a, b) => a.displayScore - b.displayScore)
-                .slice(0, 5)
-                .map((asset) => (
-                  <div key={asset.id} className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-900">{asset.asset_tag} · {asset.item_name}</p>
-                        <p className="mt-1 text-xs text-slate-500">{asset.location || "No location"} · {asset.assigned_to || "Unassigned"}</p>
-                      </div>
-                      <HealthIndicator score={asset.displayScore} />
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(asset.alerts.length ? asset.alerts : [asset.recommendation]).slice(0, 3).map((alert) => (
-                        <Badge key={alert} text={alert} className="bg-slate-100 text-slate-700" />
-                      ))}
-                    </div>
+    <div className="min-h-screen bg-[#eef3f8] pb-28 text-slate-900 md:pb-0">
+      <div className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-7">
+        <header className="overflow-hidden rounded-[30px] border border-slate-800/40 bg-[#071525] text-white shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
+          <div className="grid lg:grid-cols-[1fr_auto]">
+            <div className="relative overflow-hidden p-6 sm:p-8">
+              <div className="absolute -left-20 -top-24 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
+              <div className="absolute bottom-0 right-0 h-48 w-48 rounded-full bg-emerald-400/10 blur-3xl" />
+              <div className="relative">
+                <div className="flex items-center gap-4">
+                  <div className="grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/10 shadow-inner">
+                    <img src="/kopkop-logo.png" alt="Kopkop College" className="h-11 w-11 object-contain" />
                   </div>
-                ))}
-              {enrichedAssets.filter((asset) => asset.displayScore < 65 || asset.alerts.length > 0).length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No major health alerts right now.</div>
-              ) : null}
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-300">KOPKOP College</p>
+                    <p className="mt-1 text-sm text-slate-400">ICT Operations & Asset Intelligence</p>
+                  </div>
+                </div>
+
+                <div className="mt-7 max-w-3xl">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    Production System · Version 3.0
+                  </div>
+                  <h1 className="mt-4 text-3xl font-black leading-tight sm:text-5xl">
+                    Executive ICT Asset
+                    <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
+                      Management Dashboard
+                    </span>
+                  </h1>
+                  <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+                    Live visibility across device health, maintenance, audits, asset distribution, QR operations and management reporting.
+                  </p>
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-2 text-xs">
+                  <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="border border-white/10 bg-white/10 text-white" />
+                  <Badge text={`${stats.total} registered assets`} className="border border-white/10 bg-white/10 text-white" />
+                  <Badge text={`${stats.avgScore}% average health`} className="border border-white/10 bg-white/10 text-white" />
+                  <Badge text={`Role: ${role || "staff"}`} className="border border-white/10 bg-white/10 text-white" />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 bg-white/[0.035] p-5 lg:w-[390px] lg:border-l lg:border-t-0">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Management actions</p>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button type="button" onClick={exportSummaryPdf} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/15">
+                  <span className="mb-2 block text-xl">📊</span>Summary PDF
+                </button>
+                <button type="button" onClick={exportInventoryPdf} className="rounded-2xl bg-emerald-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-emerald-400">
+                  <span className="mb-2 block text-xl">📦</span>Inventory PDF
+                </button>
+                <button type="button" onClick={exportAlertsPdf} className="rounded-2xl bg-rose-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-rose-400">
+                  <span className="mb-2 block text-xl">🚨</span>Alerts PDF
+                </button>
+                <button type="button" onClick={() => refreshAll(true)} className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-left text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/15">
+                  <span className="mb-2 block text-xl">↻</span>{refreshing ? "Refreshing" : "Refresh Data"}
+                </button>
+              </div>
+              <button type="button" onClick={handleLogout} className="mt-3 w-full rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-bold text-rose-200 transition hover:bg-rose-400/15">
+                Secure Logout
+              </button>
             </div>
           </div>
-        </div>
+        </header>
 
-        <div className="mt-6 hidden flex-wrap gap-3 rounded-3xl bg-white p-3 shadow-sm md:flex">
+        <div className="mt-5 hidden rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur md:flex">
           {[
-            ["dashboard", "Dashboard"],
-            ["inventory", "Inventory"],
-            ["profile", "Device Profile"],
-            ["scan", "Scan Device"],
-            ["labels", "QR Labels"],
-            ["maintenance", "Maintenance"],
-            ["audit", "Quick Audit"],
-            ["history", "Audit History"],
-          ].map(([key, label]) => (
+            ["dashboard", "⌂", "Executive"],
+            ["inventory", "▦", "Inventory"],
+            ["profile", "◫", "Device Profile"],
+            ["scan", "⌁", "Scan Device"],
+            ["labels", "⌗", "QR Labels"],
+            ["maintenance", "⚒", "Maintenance"],
+            ["audit", "✓", "Quick Audit"],
+            ["history", "≡", "Audit History"],
+          ].map(([key, icon, label]) => (
             <button
               key={key}
               type="button"
               onClick={() => setActiveTab(key as typeof activeTab)}
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold ${
-                activeTab === key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
+              className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition ${
+                activeTab === key
+                  ? "bg-[#0b1f33] text-white shadow-md"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
-              {label}
+              <span className="text-base">{icon}</span>
+              <span className="hidden xl:inline">{label}</span>
             </button>
           ))}
         </div>
+
+        <div className="mt-5 grid gap-3 md:hidden">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">Mobile Technician Mode</p>
+            <h2 className="mt-1 text-xl font-black text-slate-900">Quick field actions</h2>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => openMobileTab("scan")} className="rounded-2xl bg-cyan-700 px-4 py-4 text-left text-sm font-bold text-white">
+                <span className="block text-2xl">📷</span>Scan Device
+              </button>
+              <button type="button" onClick={() => openMobileTab("inventory")} className="rounded-2xl bg-[#0b1f33] px-4 py-4 text-left text-sm font-bold text-white">
+                <span className="block text-2xl">📦</span>Assets
+              </button>
+              <button type="button" onClick={() => openMobileTab("maintenance")} className="rounded-2xl bg-orange-500 px-4 py-4 text-left text-sm font-bold text-white">
+                <span className="block text-2xl">🛠️</span>Maintenance
+              </button>
+              <button type="button" onClick={() => openMobileTab("audit")} className="rounded-2xl bg-emerald-600 px-4 py-4 text-left text-sm font-bold text-white">
+                <span className="block text-2xl">📋</span>New Audit
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {activeTab === "dashboard" && (
+          <div id="tab-dashboard" className="scroll-mt-24">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+              {[
+                { label: "Total Assets", value: stats.total, hint: "Registered ICT equipment", icon: "▦", tone: "from-blue-500 to-cyan-500" },
+                { label: "Average Health", value: `${stats.avgScore}%`, hint: "Across all devices", icon: "◉", tone: "from-emerald-500 to-teal-500" },
+                { label: "Open Work", value: unresolvedTickets, hint: "Maintenance requiring action", icon: "⚒", tone: "from-orange-500 to-amber-500" },
+                { label: "Needs Attention", value: attentionDevices, hint: "Watch, upgrade or critical", icon: "!", tone: "from-rose-500 to-orange-500" },
+                { label: "In Use", value: stats.inUse, hint: "Currently active or assigned", icon: "✓", tone: "from-violet-500 to-indigo-500" },
+                { label: "Critical", value: stats.critical, hint: "Health below 40%", icon: "⚠", tone: "from-red-600 to-rose-500" },
+              ].map((card) => (
+                <div key={card.label} className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
+                  <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.tone}`} />
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{card.label}</p>
+                      <p className="mt-3 text-3xl font-black text-slate-950">{card.value}</p>
+                    </div>
+                    <div className={`grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br ${card.tone} text-lg font-black text-white shadow-lg`}>
+                      {card.icon}
+                    </div>
+                  </div>
+                  <p className="mt-4 text-xs leading-5 text-slate-500">{card.hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-[1.45fr_0.8fr]">
+              <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">Operations overview</p>
+                    <h2 className="mt-1 text-2xl font-black text-slate-950">Device health command centre</h2>
+                    <p className="mt-1 text-sm text-slate-500">Live health classification and performance indicators.</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-950 px-4 py-3 text-white">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Fleet readiness</p>
+                    <p className="mt-1 text-2xl font-black">{stats.total ? Math.round((healthBreakdown.healthy / stats.total) * 100) : 0}%</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <DonutRing value={healthBreakdown.healthy} total={stats.total} label="Healthy devices" tone="emerald" />
+                  <DonutRing value={healthBreakdown.critical} total={stats.total} label="Critical devices" tone="red" />
+                </div>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-5">
+                    <p className="text-sm font-black text-slate-900">Performance distribution</p>
+                    <div className="mt-5 space-y-4">
+                      <MiniBar label="Good" value={performanceGraphData.good} max={stats.total} tone="emerald" />
+                      <MiniBar label="Fair" value={performanceGraphData.fair} max={stats.total} tone="amber" />
+                      <MiniBar label="Poor" value={performanceGraphData.poor} max={stats.total} tone="red" />
+                      <MiniBar label="Not rated" value={performanceGraphData.unknown} max={stats.total} tone="slate" />
+                    </div>
+                  </div>
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-5">
+                    <p className="text-sm font-black text-slate-900">Asset categories</p>
+                    <div className="mt-5 space-y-4">
+                      {categoryGraphData.length ? categoryGraphData.map((item) => (
+                        <MiniBar key={item.label} label={item.label} value={item.value} max={graphMaxCategory} tone="blue" />
+                      )) : <p className="text-sm text-slate-500">No category data recorded.</p>}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <aside className="space-y-6">
+                <section className="rounded-[28px] border border-slate-200/80 bg-[#0b1f33] p-5 text-white shadow-sm">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-300">Quick actions</p>
+                  <h2 className="mt-1 text-xl font-black">Start ICT work</h2>
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <button type="button" onClick={() => setActiveTab("inventory")} className="rounded-2xl bg-white/10 p-4 text-left text-sm font-bold transition hover:bg-white/15">
+                      <span className="mb-2 block text-2xl">＋</span>Add / Edit Asset
+                    </button>
+                    <button type="button" onClick={() => setActiveTab("maintenance")} className="rounded-2xl bg-orange-500 p-4 text-left text-sm font-bold transition hover:bg-orange-400">
+                      <span className="mb-2 block text-2xl">⚒</span>New Maintenance
+                    </button>
+                    <button type="button" onClick={() => setActiveTab("audit")} className="rounded-2xl bg-emerald-500 p-4 text-left text-sm font-bold transition hover:bg-emerald-400">
+                      <span className="mb-2 block text-2xl">✓</span>New Audit
+                    </button>
+                    <button type="button" onClick={() => setActiveTab("labels")} className="rounded-2xl bg-cyan-600 p-4 text-left text-sm font-bold transition hover:bg-cyan-500">
+                      <span className="mb-2 block text-2xl">⌗</span>Print Labels
+                    </button>
+                  </div>
+                </section>
+
+                <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Workload</p>
+                      <h2 className="mt-1 text-xl font-black text-slate-950">Maintenance status</h2>
+                    </div>
+                    <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">{unresolvedTickets} active</span>
+                  </div>
+                  <div className="mt-5 space-y-4">
+                    <MiniBar label="Open" value={maintenanceStats.open} max={Math.max(1, maintenanceRecords.length)} tone="red" />
+                    <MiniBar label="In progress" value={maintenanceStats.inProgress} max={Math.max(1, maintenanceRecords.length)} tone="orange" />
+                    <MiniBar label="Waiting parts" value={maintenanceStats.waiting} max={Math.max(1, maintenanceRecords.length)} tone="amber" />
+                    <MiniBar label="Completed" value={maintenanceStats.completed} max={Math.max(1, maintenanceRecords.length)} tone="emerald" />
+                  </div>
+                </section>
+              </aside>
+            </div>
+
+            <div className="mt-6 space-y-6">
+              <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-700">Distribution intelligence</p>
+                  <h2 className="mt-1 text-2xl font-black text-slate-950">Assets by department / location</h2>
+                  <p className="mt-1 text-sm text-slate-500">Largest device concentrations across the campus.</p>
+                </div>
+                <div className="mt-6 grid gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {departmentGraphData.length ? departmentGraphData.map((item) => (
+                    <MiniBar key={item.label} label={item.label} value={item.value} max={graphMaxDepartment} tone="blue" />
+                  )) : <p className="text-sm text-slate-500">No department data recorded.</p>}
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Live operations</p>
+                    <h2 className="mt-1 text-2xl font-black text-slate-950">Recent activity</h2>
+                  </div>
+                  <span className="h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.12)]" />
+                </div>
+                <div className="mt-5 space-y-3">
+                  {executiveActivity.length ? executiveActivity.map((item) => (
+                    <div key={item.id} className="flex min-w-0 gap-3 overflow-hidden rounded-2xl border border-slate-100 p-3 transition hover:bg-slate-50 sm:p-4">
+                      <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${item.tone}`}>{item.icon}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                          <p className="min-w-0 break-words text-sm font-bold leading-5 text-slate-900 [overflow-wrap:anywhere]">{item.title}</p>
+                          <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold text-slate-400">{formatDateTime(item.date)}</span>
+                        </div>
+                        <p className="mt-1 break-words text-xs leading-5 text-slate-500 [overflow-wrap:anywhere]">{item.meta}</p>
+                      </div>
+                    </div>
+                  )) : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No recent activity recorded.</p>}
+                </div>
+              </section>
+            </div>
+
+            <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Fleet classification</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "Healthy", value: healthBreakdown.healthy, note: "Normal operation", cls: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+                    { label: "Watch", value: healthBreakdown.watch, note: "Monitor condition", cls: "border-amber-200 bg-amber-50 text-amber-800" },
+                    { label: "Needs Upgrade", value: healthBreakdown.upgrade, note: "Plan improvement", cls: "border-orange-200 bg-orange-50 text-orange-800" },
+                    { label: "Critical", value: healthBreakdown.critical, note: "Urgent attention", cls: "border-rose-200 bg-rose-50 text-rose-800" },
+                  ].map((item) => (
+                    <div key={item.label} className={`rounded-2xl border p-4 ${item.cls}`}>
+                      <p className="text-xs font-black uppercase tracking-wide">{item.label}</p>
+                      <p className="mt-2 text-3xl font-black">{item.value}</p>
+                      <p className="mt-1 text-xs opacity-80">{item.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-700">Priority queue</p>
+                    <h2 className="mt-1 text-xl font-black text-slate-950">Devices needing follow-up</h2>
+                  </div>
+                  <button type="button" onClick={exportAlertsPdf} className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">Export</button>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {enrichedAssets
+                    .filter((asset) => asset.displayScore < 65 || asset.alerts.length > 0)
+                    .sort((a, b) => a.displayScore - b.displayScore)
+                    .slice(0, 5)
+                    .map((asset) => (
+                      <button key={asset.id} type="button" onClick={() => openDeviceProfile(asset.id)} className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-100 p-3 text-left transition hover:border-cyan-200 hover:bg-cyan-50/40">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-slate-900">{asset.asset_tag} · {asset.item_name}</p>
+                          <p className="mt-1 truncate text-xs text-slate-500">{asset.location || "No location"} · {asset.recommendation}</p>
+                        </div>
+                        <HealthIndicator score={asset.displayScore} />
+                      </button>
+                    ))}
+                  {attentionDevices === 0 ? (
+                    <div className="rounded-2xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">No major health alerts right now.</div>
+                  ) : null}
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
 
         <div ref={activeContentRef} className="scroll-mt-28" />
 
@@ -3484,6 +4427,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                                 </div>
 
                                 <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => printMaintenanceReport(record)}
+                                    className="rounded-xl bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-700"
+                                  >
+                                    Print / Save PDF
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => editMaintenance(record)}
@@ -3939,21 +4889,44 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                 </div>
 
                 <div className="rounded-3xl bg-white p-5 shadow-sm">
-                  <SectionTitle title="Activity timeline" subtitle="Newest device activity first across audits and maintenance records." />
-                  <div className="space-y-3">
+                  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900">Asset lifecycle timeline</h2>
+                      <p className="mt-1 text-sm text-slate-500">Purchase, registration, audits, maintenance and the device's current state in one history.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={printAssetLifecycleReport}
+                      className="rounded-2xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm"
+                    >
+                      Print Lifecycle Report
+                    </button>
+                  </div>
+                  <div className="relative space-y-0 pl-7 before:absolute before:bottom-3 before:left-[11px] before:top-3 before:w-0.5 before:bg-teal-100">
                     {selectedAssetTimeline.length === 0 ? (
                       <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No activity yet for this device.</div>
                     ) : (
                       selectedAssetTimeline.map((item) => (
-                        <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-900">{item.type} · {item.title}</p>
-                              <p className="mt-1 text-sm text-slate-500">{formatDateTime(item.date)}</p>
-                              <p className="mt-2 text-sm text-slate-700">{item.subtitle}</p>
-                              <p className="mt-2 text-sm text-slate-600">{item.notes}</p>
+                        <div key={item.id} className="relative pb-4">
+                          <span
+                            title={item.type}
+                            className={`absolute -left-7 top-4 grid h-7 w-7 place-items-center rounded-full border-4 border-white text-[12px] font-bold text-white shadow-sm ${lifecycleMarkerClass(item.type)}`}
+                          >
+                            {lifecycleIcon(item.type)}
+                          </span>
+                          <div
+                            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                            style={{ borderLeftWidth: "4px", borderLeftColor: lifecycleAccent(item.type) }}
+                          >
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div>
+                                <p className="font-semibold text-slate-900">{item.title}</p>
+                                <p className="mt-1 text-sm text-slate-500">{formatDateTime(item.date)}</p>
+                                <p className="mt-2 text-sm font-medium text-slate-700">{item.subtitle}</p>
+                                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{item.notes}</p>
+                              </div>
+                              <Badge text={item.type} className={item.toneClass} />
                             </div>
-                            <Badge text={item.type} className={item.toneClass} />
                           </div>
                         </div>
                       ))
@@ -3978,10 +4951,19 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                             <p className="mt-1 text-sm text-slate-500">{check.inspected_by} · {formatDate(check.inspection_date)}</p>
                             <p className="mt-2 text-sm text-slate-600">{check.remarks || "No remarks recorded."}</p>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Badge text={check.final_status} className={statusPillClass(check.final_status)} />
-                            <Badge text={check.priority_level || "Low"} className={statusPillClass(check.priority_level)} />
-                            <Badge text={`${check.health_score ?? 0}%`} className={scoreTone(check.health_score ?? 0)} />
+                          <div className="flex shrink-0 flex-col gap-3 lg:items-end">
+                            <div className="flex flex-wrap gap-2">
+                              <Badge text={check.final_status} className={statusPillClass(check.final_status)} />
+                              <Badge text={check.priority_level || "Low"} className={statusPillClass(check.priority_level)} />
+                              <Badge text={`${check.health_score ?? 0}%`} className={scoreTone(check.health_score ?? 0)} />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => printAuditReport(check)}
+                              className="rounded-xl bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-700"
+                            >
+                              Print / Save PDF
+                            </button>
                           </div>
                         </div>
                       </div>
