@@ -4,6 +4,7 @@ type MobileAssetCardProps = {
   savingAudit: boolean;
   savingMaintenance: boolean;
   openDeviceProfile: (assetId: number) => void;
+  openEditAsset: (asset: any) => void;
   openAuditForAsset: (asset: any) => void;
   createMaintenance: (asset: any) => void;
 };
@@ -28,6 +29,7 @@ export default function MobileAssetCard({
   savingAudit,
   savingMaintenance,
   openDeviceProfile,
+  openEditAsset,
   openAuditForAsset,
   createMaintenance,
 }: MobileAssetCardProps) {
@@ -40,15 +42,21 @@ export default function MobileAssetCard({
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">
             {asset.asset_tag}
           </p>
+
           <h3 className="mt-1 truncate text-lg font-bold text-slate-900">
             {asset.item_name}
           </h3>
+
           <p className="mt-1 text-sm text-slate-500">
             {asset.brand || "-"} {asset.model || ""}
           </p>
         </div>
 
-        <div className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${healthBadgeClass(score)}`}>
+        <div
+          className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${healthBadgeClass(
+            score
+          )}`}
+        >
           {score}%
         </div>
       </div>
@@ -56,18 +64,25 @@ export default function MobileAssetCard({
       <div className="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
         <p>📍 {asset.location || "No location"}</p>
         <p>👤 {asset.assigned_to || "Unassigned"}</p>
-        <p>💻 {asset.os || "-"} / {asset.ram || "-"}</p>
+        <p>
+          💻 {asset.os || "-"} / {asset.ram || "-"}
+        </p>
         <p>🔧 {asset.status || "-"}</p>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${healthBadgeClass(score)}`}>
+        <span
+          className={`rounded-full border px-3 py-1 text-xs font-bold ${healthBadgeClass(
+            score
+          )}`}
+        >
           {healthLabel(score)}
         </span>
 
         {asset.alerts?.length ? (
           <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
-            {asset.alerts.length} alert{asset.alerts.length === 1 ? "" : "s"}
+            {asset.alerts.length} alert
+            {asset.alerts.length === 1 ? "" : "s"}
           </span>
         ) : (
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
@@ -76,13 +91,22 @@ export default function MobileAssetCard({
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={() => openDeviceProfile(asset.id)}
           className="rounded-2xl bg-slate-900 px-3 py-3 text-xs font-bold text-white"
         >
           Profile
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openEditAsset(asset)}
+          disabled={loading}
+          className="rounded-2xl bg-blue-600 px-3 py-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Edit
         </button>
 
         <button

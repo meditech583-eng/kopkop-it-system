@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import MobileAssetCard from "./components/MobileAssetCard";
+import ComponentManager from "./components/ComponentManager";
 declare global {
   interface Window {
     BarcodeDetector?: {
@@ -110,7 +111,119 @@ type DeviceStatusCheck = {
 };
 
 
+type ComponentStatus =
+  | "Installed"
+  | "In Store"
+  | "Removed"
+  | "Faulty"
+  | "Replaced"
+  | "Disposed";
 
+type ComponentCondition =
+  | "Good"
+  | "Fair"
+  | "Faulty"
+  | "Damaged";
+
+type ComponentHistoryAction =
+  | "Added"
+  | "Installed"
+  | "Removed"
+  | "Replaced"
+  | "Marked Faulty"
+  | "Returned to Store"
+  | "Disposed"
+  | "Updated";
+
+type AssetComponent = {
+  id: number;
+  asset_id: number;
+  asset_tag: string | null;
+
+  component_type: string;
+  component_name: string;
+
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  specification: string | null;
+
+  quantity: number;
+  status: ComponentStatus;
+  condition: ComponentCondition | null;
+
+  installed_date: string | null;
+  removed_date: string | null;
+
+  supplier: string | null;
+  purchase_date: string | null;
+  warranty_expiry: string | null;
+
+  location: string | null;
+
+  installed_by: string | null;
+  removed_by: string | null;
+
+  notes: string | null;
+
+  created_at: string;
+  updated_at: string;
+};
+
+type AssetComponentHistory = {
+  id: number;
+  component_id: number | null;
+  asset_id: number | null;
+  asset_tag: string | null;
+
+  component_type: string | null;
+  component_name: string | null;
+
+  action: ComponentHistoryAction;
+
+  previous_status: string | null;
+  new_status: string | null;
+
+  performed_by: string | null;
+  action_date: string;
+
+  reason: string | null;
+  notes: string | null;
+
+  created_at: string;
+};
+
+type ComponentFormState = {
+  id: number | null;
+  assetId: string;
+  assetTag: string;
+
+  componentType: string;
+  componentName: string;
+
+  brand: string;
+  model: string;
+  serialNumber: string;
+  specification: string;
+
+  quantity: string;
+  status: ComponentStatus;
+  condition: ComponentCondition;
+
+  installedDate: string;
+  removedDate: string;
+
+  supplier: string;
+  purchaseDate: string;
+  warrantyExpiry: string;
+
+  location: string;
+
+  installedBy: string;
+  removedBy: string;
+
+  notes: string;
+};
 type MaintenanceStatus = "Open" | "In Progress" | "Waiting for Parts" | "Completed" | "Cancelled";
 type MaintenancePriority = "Low" | "Medium" | "High" | "Critical";
 
@@ -223,6 +336,7 @@ type EnrichedAsset = ITAsset & {
   recommendation: string;
   alerts: string[];
   healthLabel: "Healthy" | "Watch" | "Needs Upgrade" | "Critical";
+  operationalStatus: "Operational" | "Limited Service" | "Unavailable" | "Out of Service";
 };
 
 const EMPTY_ASSET_FORM: AssetFormState = {
@@ -305,6 +419,63 @@ const EMPTY_MAINTENANCE_FORM: MaintenanceFormState = {
   previousAssetStatus: "In Use",
 };
 
+const EMPTY_COMPONENT_FORM: ComponentFormState = {
+  id: null,
+  assetId: "",
+  assetTag: "",
+
+  componentType: "RAM",
+  componentName: "",
+
+  brand: "",
+  model: "",
+  serialNumber: "",
+  specification: "",
+
+  quantity: "1",
+  status: "Installed",
+  condition: "Good",
+
+  installedDate: new Date().toISOString().slice(0, 10),
+  removedDate: "",
+
+  supplier: "",
+  purchaseDate: "",
+  warrantyExpiry: "",
+
+  location: "",
+
+  installedBy: "",
+  removedBy: "",
+
+  notes: "",
+};
+
+
+
+
+const DEVICE_CATEGORIES = [
+  "Desktop",
+  "Laptop",
+  "Server",
+  "Monitor",
+  "Projector",
+  "Printer",
+  "Scanner",
+  "UPS",
+  "Router",
+  "Network Switch",
+  "Wireless Access Point",
+  "NVR / DVR",
+  "CCTV Camera",
+  "IP Phone",
+  "Tablet",
+  "External Storage",
+  "Keyboard",
+  "Mouse",
+  "Other",
+] as const;
+
 const DIVISIONS = [
   "KOPKOP College Admin Team",
   "Primary School",
@@ -375,6 +546,7 @@ function statusPillClass(status?: string | null) {
     case "in store":
       return "bg-slate-100 text-slate-700";
     case "under repair":
+    case "active repair ticket":
     case "needs minor repair":
     case "slow":
     case "watch":
@@ -465,11 +637,206 @@ function inferRecommendation(asset: ITAsset, score: number) {
   return "Device looks acceptable";
 }
 
-function computeAssetHealth(asset: ITAsset, audit?: DeviceStatusCheck | null) {
-  const score = audit?.health_score ?? inferHealthScore(asset);
+function maintenanceIssueText(record?: MaintenanceRecord | null) {
+  if (!record) return "";
+
+  return [
+    record.issue,
+    record.notes,
+    record.action_taken,
+    record.resolution_notes,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function isExternalDependencyIssue(record?: MaintenanceRecord | null) {
+  const text = maintenanceIssueText(record);
+
+  const externalDependencyWords = [
+    "classroom hdmi",
+    "installed hdmi cable",
+    "hdmi cable",
+    "vga cable",
+    "display cable",
+    "network cable",
+    "ethernet cable",
+    "patch cable",
+    "faulty cable",
+    "damaged cable",
+    "wall outlet",
+    "power outlet",
+    "wall socket",
+    "network port",
+    "wall port",
+    "power point",
+  ];
+
+  const deviceConfirmedWorkingWords = [
+    "projector powers on",
+    "projector is working",
+    "projector working",
+    "device powers on",
+    "device is working",
+    "device working",
+    "no fault with the projector",
+    "no fault with the device",
+    "functions correctly",
+    "functions normally",
+    "all functions operate normally",
+    "known working hdmi cable",
+  ];
+
+  return (
+    externalDependencyWords.some((word) => text.includes(word)) &&
+    deviceConfirmedWorkingWords.some((word) => text.includes(word))
+  );
+}
+
+function hasCriticalDeviceFailure(record?: MaintenanceRecord | null) {
+  const text = maintenanceIssueText(record);
+
+  const criticalIssueWords = [
+    "will not power",
+    "won't power",
+    "wont power",
+    "no power",
+    "does not power",
+    "not powering",
+    "does not post",
+    "no post",
+    "not boot",
+    "won't boot",
+    "wont boot",
+    "out of service",
+    "dead",
+    "amber light",
+    "firmware loop",
+    "motherboard failure",
+    "power supply failure",
+  ];
+
+  return criticalIssueWords.some((word) => text.includes(word));
+}
+
+function hasWorkingTemporarySolution(record?: MaintenanceRecord | null) {
+  const text = maintenanceIssueText(record);
+
+  const workaroundWords = [
+    "external monitor",
+    "temporary monitor",
+    "backup monitor",
+    "spare monitor",
+    "loan monitor",
+    "using an external screen",
+    "using external screen",
+    "currently in use",
+    "still in use",
+    "user is using",
+    "operating using",
+    "operating with",
+    "temporary solution",
+    "temporary workaround",
+    "workaround provided",
+    "replacement provided",
+    "loan device provided",
+    "backup device provided",
+    "can still be used",
+    "device remains usable",
+    "service restored temporarily",
+  ];
+
+  return workaroundWords.some((word) => text.includes(word));
+}
+
+function getOperationalStatus(
+  asset: ITAsset,
+  record?: MaintenanceRecord | null
+): EnrichedAsset["operationalStatus"] {
+  if (!record || record.status === "Completed" || record.status === "Cancelled") {
+    if (asset.status === "Damaged" || asset.status === "Lost" || asset.status === "Retired") {
+      return "Out of Service";
+    }
+
+    if (asset.status === "Under Repair") return "Unavailable";
+    return "Operational";
+  }
+
+  // A temporary workaround means the user can still work, but not at full normal service.
+  if (hasWorkingTemporarySolution(record)) {
+    return "Limited Service";
+  }
+
+  if (isExternalDependencyIssue(record)) {
+    return record.status === "Open" ? "Limited Service" : "Unavailable";
+  }
+
+  if (hasCriticalDeviceFailure(record)) return "Out of Service";
+  if (record.status === "Waiting for Parts") return "Unavailable";
+  return "Limited Service";
+}
+
+function maintenanceHealthScore(record?: MaintenanceRecord | null) {
+  if (!record || record.status === "Completed" || record.status === "Cancelled") {
+    return null;
+  }
+
+  // External infrastructure faults affect availability, not the device's hardware health.
+  if (isExternalDependencyIssue(record)) {
+    return null;
+  }
+
+  let score =
+    record.status === "Waiting for Parts"
+      ? 20
+      : record.status === "In Progress"
+        ? 30
+        : 45;
+
+  if (record.priority === "Critical") score = Math.min(score, 10);
+  if (record.priority === "High") score = Math.min(score, 25);
+
+  if (hasCriticalDeviceFailure(record)) {
+    score = Math.min(score, 15);
+  }
+
+  return score;
+}
+
+function computeAssetHealth(
+  asset: ITAsset,
+  audit?: DeviceStatusCheck | null,
+  activeMaintenance?: MaintenanceRecord | null
+) {
+  const normalScore = audit?.health_score ?? inferHealthScore(asset);
+  const repairScore = maintenanceHealthScore(activeMaintenance);
+  const score = repairScore === null ? normalScore : Math.min(normalScore, repairScore);
   const label = getHealthLabel(score);
   const alerts = getHealthAlerts(asset);
+
+  if (activeMaintenance) {
+    if (hasWorkingTemporarySolution(activeMaintenance)) {
+      alerts.unshift("Temporary workaround in use");
+    } else if (isExternalDependencyIssue(activeMaintenance)) {
+      alerts.unshift("External connection fault");
+    } else {
+      alerts.unshift(
+        activeMaintenance.status === "Waiting for Parts"
+          ? "Waiting for repair parts"
+          : "Active repair ticket"
+      );
+    }
+  }
+
   return { score, label, alerts };
+}
+
+const PUBLIC_APP_URL = (process.env.NEXT_PUBLIC_APP_URL || "https://kopkop-it-system.vercel.app").replace(/\/+$/, "");
+
+function buildPublicAssetUrl(assetTag: string) {
+  const safeTag = (assetTag || "").trim();
+  return `${PUBLIC_APP_URL}/device/${encodeURIComponent(safeTag)}`;
 }
 
 function buildQrUrl(value: string, size = 1000) {
@@ -684,8 +1051,30 @@ function HealthIndicator({ score }: { score: number }) {
   );
 }
 
+function OperationalIndicator({
+  status,
+}: {
+  status: EnrichedAsset["operationalStatus"];
+}) {
+  const className =
+    status === "Operational"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : status === "Limited Service"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : status === "Unavailable"
+          ? "border-orange-200 bg-orange-50 text-orange-700"
+          : "border-red-200 bg-red-50 text-red-700";
+
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${className}`}>
+      <span className="h-2.5 w-2.5 rounded-full bg-current opacity-70" />
+      <span>{status}</span>
+    </div>
+  );
+}
+
 function QRLabelCard({ asset }: { asset: ITAsset }) {
-  const qrValue = asset.asset_tag.trim();
+  const qrValue = buildPublicAssetUrl(asset.asset_tag);
   const qrUrl = buildQrUrl(qrValue, 1000);
   const subtitle = `${asset.item_name} • ${asset.location || "No location"}`;
 
@@ -827,7 +1216,7 @@ function QRLabelCard({ asset }: { asset: ITAsset }) {
               <div class="subtitle">${safeSubtitle}</div>
               <img class="qr" src="${safeQrUrl}" alt="QR Code" />
               <div class="value">${safeTag}</div>
-              <div class="meta">Scan to open asset profile</div>
+              <div class="meta">Scan with any phone camera to open the public device passport</div>
             </div>
           </div>
           ${buildPrintScript()}
@@ -854,7 +1243,7 @@ function QRLabelCard({ asset }: { asset: ITAsset }) {
         />
         <h3 className="mt-4 text-lg font-bold text-slate-900">{asset.asset_tag}</h3>
         <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-        <p className="mt-1 text-sm text-slate-500">QR value: {qrValue}</p>
+        <p className="mt-1 break-all text-xs text-slate-500">Public passport: {qrValue}</p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <button type="button" onClick={handleDownloadQr} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
             Download QR
@@ -877,17 +1266,28 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [assets, setAssets] = useState<ITAsset[]>([]);
   const [deviceChecks, setDeviceChecks] = useState<DeviceStatusCheck[]>([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
+  const [assetComponents, setAssetComponents] = useState<AssetComponent[]>([]);
+const [componentHistory, setComponentHistory] =
+  useState<AssetComponentHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingAsset, setSavingAsset] = useState(false);
   const [savingAudit, setSavingAudit] = useState(false);
   const [savingMaintenance, setSavingMaintenance] = useState(false);
+  const [savingComponent, setSavingComponent] = useState(false);
+const [deletingComponentId, setDeletingComponentId] =
+  useState<number | null>(null);
   const [uploadingPhotoSlot, setUploadingPhotoSlot] = useState<"front" | "back" | "label" | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<number | null>(null);
   const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
   const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
   const [auditForm, setAuditForm] = useState<AuditFormState>(EMPTY_AUDIT_FORM);
   const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormState>(EMPTY_MAINTENANCE_FORM);
+  const [componentForm, setComponentForm] =
+    useState<ComponentFormState>(EMPTY_COMPONENT_FORM);
+  const [showComponentForm, setShowComponentForm] = useState(false);
+  const [componentBeingReplaced, setComponentBeingReplaced] =
+    useState<AssetComponent | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -913,6 +1313,38 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const activeContentRef = useRef<HTMLDivElement | null>(null);
 
   const isAdmin = role === "admin";
+
+  const normalizedAssetCategory = assetForm.category.trim().toLowerCase();
+
+  const isComputerAsset = [
+    "desktop",
+    "laptop",
+    "server",
+  ].includes(normalizedAssetCategory);
+
+  const isNetworkAsset = [
+    "desktop",
+    "laptop",
+    "server",
+    "printer",
+    "router",
+    "network switch",
+    "wireless access point",
+    "nvr / dvr",
+    "nvr",
+    "dvr",
+    "cctv camera",
+    "ip phone",
+  ].includes(normalizedAssetCategory);
+
+  const showsComputerAccessories = [
+    "desktop",
+    "laptop",
+    "server",
+  ].includes(normalizedAssetCategory);
+
+  const showsPerformanceChecks = isComputerAsset;
+
 
   useEffect(() => {
     void checkUser();
@@ -1091,6 +1523,27 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     if (error) throw error;
     setMaintenanceRecords((data || []) as MaintenanceRecord[]);
   }
+async function loadAssetComponents() {
+  const { data, error } = await supabase
+    .from("asset_components")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  setAssetComponents((data || []) as AssetComponent[]);
+}
+
+async function loadComponentHistory() {
+  const { data, error } = await supabase
+    .from("asset_component_history")
+    .select("*")
+    .order("action_date", { ascending: false });
+
+  if (error) throw error;
+
+  setComponentHistory((data || []) as AssetComponentHistory[]);
+}
 
   async function refreshAll(showBusy = true) {
     try {
@@ -1098,7 +1551,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       setLoading(true);
       // Small delay to ensure database has fully processed changes
       await new Promise((resolve) => setTimeout(resolve, 300));
-      await Promise.all([loadAssets(), loadDeviceChecks(), loadMaintenance()]);
+      await Promise.all([
+  loadAssets(),
+  loadDeviceChecks(),
+  loadMaintenance(),
+  loadAssetComponents(),
+  loadComponentHistory(),
+]);
       setLastSyncedAt(new Date().toLocaleString());
     } catch (error) {
       console.error(error);
@@ -1117,21 +1576,64 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     return map;
   }, [deviceChecks]);
 
+  const activeMaintenanceByAssetId = useMemo(() => {
+    const map = new Map<number, MaintenanceRecord>();
+
+    for (const record of maintenanceRecords) {
+      if (!record.asset_id) continue;
+      if (record.status === "Completed" || record.status === "Cancelled") continue;
+
+      const existing = map.get(record.asset_id);
+      const recordDate = new Date(
+        record.updated_at ||
+          record.last_status_change ||
+          record.created_at ||
+          record.date_reported ||
+          0
+      ).getTime();
+      const existingDate = existing
+        ? new Date(
+            existing.updated_at ||
+              existing.last_status_change ||
+              existing.created_at ||
+              existing.date_reported ||
+              0
+          ).getTime()
+        : 0;
+
+      if (!existing || recordDate >= existingDate) {
+        map.set(record.asset_id, record);
+      }
+    }
+
+    return map;
+  }, [maintenanceRecords]);
+
   const enrichedAssets = useMemo<EnrichedAsset[]>(() => {
     return assets.map((asset) => {
       const lastAudit = latestAuditByAssetId.get(asset.id) || null;
-      const displayScore = lastAudit?.health_score ?? inferHealthScore(asset);
-      const alerts = getHealthAlerts(asset);
+      const activeMaintenance = activeMaintenanceByAssetId.get(asset.id) || null;
+      const health = computeAssetHealth(asset, lastAudit, activeMaintenance);
+
       return {
         ...asset,
         lastAudit,
-        displayScore,
-        alerts,
-        healthLabel: getHealthLabel(displayScore),
-        recommendation: inferRecommendation(asset, displayScore),
+        displayScore: health.score,
+        alerts: health.alerts,
+        healthLabel: health.label,
+        operationalStatus: getOperationalStatus(asset, activeMaintenance),
+        recommendation: activeMaintenance
+          ? hasWorkingTemporarySolution(activeMaintenance)
+            ? "Temporary workaround is in place; permanent repair is still required"
+            : isExternalDependencyIssue(activeMaintenance)
+              ? "Device is healthy, but an external connection fault is affecting service"
+              : activeMaintenance.status === "Waiting for Parts"
+                ? "Repair is waiting for parts"
+                : "Active repair requires IT attention"
+          : inferRecommendation(asset, health.score),
       };
     });
-  }, [assets, latestAuditByAssetId]);
+  }, [assets, latestAuditByAssetId, activeMaintenanceByAssetId]);
 
   const filteredAssets = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1193,6 +1695,18 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     if (!selectedAsset) return [];
     return maintenanceRecords.filter((record) => record.asset_id === selectedAsset.id);
   }, [maintenanceRecords, selectedAsset]);
+
+  const selectedAssetComponents = useMemo(() => {
+    if (!selectedAsset) return [];
+
+    return assetComponents
+      .filter((component) => component.asset_id === selectedAsset.id)
+      .sort((a, b) => {
+        if (a.status === "Installed" && b.status !== "Installed") return -1;
+        if (a.status !== "Installed" && b.status === "Installed") return 1;
+        return a.component_type.localeCompare(b.component_type);
+      });
+  }, [assetComponents, selectedAsset]);
 
   const selectedAssetTimeline = useMemo(() => {
     if (!selectedAsset) return [];
@@ -1644,7 +2158,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     const latestMaintenance = selectedAssetMaintenance[0] || null;
     const generatedAt = new Date();
     const logoUrl = `${window.location.origin}/kopkop-logo.png`;
-    const qrUrl = buildQrUrl(reportAsset.asset_tag.trim(), 900);
+    const qrUrl = buildQrUrl(buildPublicAssetUrl(reportAsset.asset_tag), 900);
     const barcodeUrl = `https://bwipjs-api.metafloor.com/?bcid=code128&scale=4&height=16&includetext&textsize=13&text=${encodeURIComponent(reportAsset.asset_tag.trim())}`;
     const healthScore = Math.max(0, Math.min(100, reportAsset.displayScore));
     const healthTone =
@@ -1685,9 +2199,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     ];
 
     const photoItems = [
-      { label: "Front View", url: reportAsset.photo_front_url },
-      { label: "Back View", url: reportAsset.photo_back_url },
-      { label: "Serial / Asset Label", url: reportAsset.photo_label_url },
+      { label: "Overall Device", url: reportAsset.photo_front_url },
+      { label: "Additional Photo", url: reportAsset.photo_back_url },
+      { label: "Asset / Serial Label", url: reportAsset.photo_label_url },
     ].filter((item) => Boolean(item.url));
     const mainPhoto = photoItems[0]?.url || "";
 
@@ -1950,7 +2464,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
     const asset = selectedAsset;
     const logoUrl = `${window.location.origin}/kopkop-logo.png`;
-    const qrUrl = buildQrUrl(asset.asset_tag.trim(), 700);
+    const qrUrl = buildQrUrl(buildPublicAssetUrl(asset.asset_tag), 700);
     const generatedAt = new Date();
     const events = selectedAssetTimeline;
     const reportNumber = `LC-${generatedAt.getFullYear()}-${String(asset.id).padStart(4, "0")}`;
@@ -2090,7 +2604,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     const reportYear = new Date(record.date_reported || record.created_at || Date.now()).getFullYear();
     const ticketNumber = `MT-${reportYear}-${String(record.id).padStart(4, "0")}`;
     const logoUrl = `${window.location.origin}/kopkop-logo.png`;
-    const qrValue = (record.asset_tag || relatedAsset?.asset_tag || ticketNumber).trim();
+    const assetTagForQr = (record.asset_tag || relatedAsset?.asset_tag || "").trim();
+    const qrValue = assetTagForQr ? buildPublicAssetUrl(assetTagForQr) : ticketNumber;
     const qrUrl = buildQrUrl(qrValue, 700);
 
     const status = record.status || "Open";
@@ -2106,9 +2621,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
               : { accent: "#0369a1", soft: "#e0f2fe" };
 
     const photoUrls = [
-      { label: "Front View", url: relatedAsset?.photo_front_url },
-      { label: "Back View", url: relatedAsset?.photo_back_url },
-      { label: "Serial / Asset Label", url: relatedAsset?.photo_label_url },
+      { label: "Overall Device", url: relatedAsset?.photo_front_url },
+      { label: "Additional Photo", url: relatedAsset?.photo_back_url },
+      { label: "Asset / Serial Label", url: relatedAsset?.photo_label_url },
     ].filter((photo) => Boolean(photo.url));
 
     const reportHtml = `
@@ -2383,7 +2898,8 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
     const reportYear = new Date(check.inspection_date || check.created_at || Date.now()).getFullYear();
     const auditNumber = `AUD-${reportYear}-${String(check.id).padStart(4, "0")}`;
     const logoUrl = `${window.location.origin}/kopkop-logo.png`;
-    const qrValue = (check.asset_tag || relatedAsset?.asset_tag || auditNumber).trim();
+    const assetTagForQr = (check.asset_tag || relatedAsset?.asset_tag || "").trim();
+    const qrValue = assetTagForQr ? buildPublicAssetUrl(assetTagForQr) : auditNumber;
     const qrUrl = buildQrUrl(qrValue, 700);
     const score = Math.max(0, Math.min(100, check.health_score ?? 0));
     const scoreTone =
@@ -2396,9 +2912,9 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             : { accent: "#b91c1c", soft: "#fee2e2", label: "Critical" };
 
     const photoUrls = [
-      { label: "Front View", url: relatedAsset?.photo_front_url },
-      { label: "Back View", url: relatedAsset?.photo_back_url },
-      { label: "Serial / Asset Label", url: relatedAsset?.photo_label_url },
+      { label: "Overall Device", url: relatedAsset?.photo_front_url },
+      { label: "Additional Photo", url: relatedAsset?.photo_back_url },
+      { label: "Asset / Serial Label", url: relatedAsset?.photo_label_url },
     ].filter((photo) => Boolean(photo.url));
 
     const reportHtml = `
@@ -2665,7 +3181,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
     const labelsHtml = items
       .map((asset) => {
-        const qrValue = asset.asset_tag.trim();
+        const qrValue = buildPublicAssetUrl(asset.asset_tag);
         const qrUrl = buildQrUrl(qrValue, 1000);
         return `
           <div class="label">
@@ -2674,7 +3190,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             <div class="asset-name">${safeHtml(asset.item_name)}</div>
             <div class="asset-meta">${safeHtml(asset.location || "No location")}</div>
             <img class="qr" src="${safeHtml(qrUrl)}" alt="QR ${safeHtml(asset.asset_tag)}" />
-            <div class="qr-value">${safeHtml(qrValue)}</div>
+            <div class="qr-value">${safeHtml(asset.asset_tag)}</div>
           </div>
         `;
       })
@@ -2835,6 +3351,315 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       .update({ status: assetStatus })
       .eq("id", assetId);
     if (error) throw error;
+  }
+
+  function resetComponentForm() {
+    setComponentForm(EMPTY_COMPONENT_FORM);
+    setComponentBeingReplaced(null);
+    setShowComponentForm(false);
+  }
+
+  function openAddComponentForm() {
+    if (!selectedAsset) return;
+
+    setComponentBeingReplaced(null);
+    setComponentForm({
+      ...EMPTY_COMPONENT_FORM,
+      assetId: String(selectedAsset.id),
+      assetTag: selectedAsset.asset_tag,
+      location: selectedAsset.location || "",
+      installedBy: user?.email || "",
+    });
+    setShowComponentForm(true);
+  }
+
+  function openEditComponentForm(component: AssetComponent) {
+    setComponentBeingReplaced(null);
+    setComponentForm({
+      id: component.id,
+      assetId: String(component.asset_id),
+      assetTag: component.asset_tag || "",
+      componentType: component.component_type,
+      componentName: component.component_name,
+      brand: component.brand || "",
+      model: component.model || "",
+      serialNumber: component.serial_number || "",
+      specification: component.specification || "",
+      quantity: String(component.quantity || 1),
+      status: component.status,
+      condition: component.condition || "Good",
+      installedDate: component.installed_date || "",
+      removedDate: component.removed_date || "",
+      supplier: component.supplier || "",
+      purchaseDate: component.purchase_date || "",
+      warrantyExpiry: component.warranty_expiry || "",
+      location: component.location || "",
+      installedBy: component.installed_by || "",
+      removedBy: component.removed_by || "",
+      notes: component.notes || "",
+    });
+    setShowComponentForm(true);
+  }
+
+  function openReplaceComponentForm(component: AssetComponent) {
+    const today = new Date().toISOString().slice(0, 10);
+
+    setComponentBeingReplaced(component);
+    setComponentForm({
+      ...EMPTY_COMPONENT_FORM,
+      id: null,
+      assetId: String(component.asset_id),
+      assetTag: component.asset_tag || "",
+      componentType: component.component_type,
+      componentName: "",
+      brand: component.brand || "",
+      model: "",
+      serialNumber: "",
+      specification: component.specification || "",
+      quantity: String(component.quantity || 1),
+      status: "Installed",
+      condition: "Good",
+      installedDate: today,
+      removedDate: "",
+      supplier: component.supplier || "",
+      purchaseDate: "",
+      warrantyExpiry: "",
+      location: component.location || selectedAsset?.location || "",
+      installedBy: user?.email || "",
+      removedBy: "",
+      notes: `Replacement for ${component.component_name}`,
+    });
+    setShowComponentForm(true);
+  }
+
+  async function handleSaveComponent(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!isAdmin) {
+      alert("Only admin users can save components.");
+      return;
+    }
+
+    if (!componentForm.assetId || !componentForm.componentType.trim() || !componentForm.componentName.trim()) {
+      alert("Please select an asset and enter the component type and name.");
+      return;
+    }
+
+    setSavingComponent(true);
+
+    const payload = {
+      asset_id: Number(componentForm.assetId),
+      asset_tag: componentForm.assetTag.trim() || null,
+      component_type: componentForm.componentType.trim(),
+      component_name: componentForm.componentName.trim(),
+      brand: componentForm.brand.trim() || null,
+      model: componentForm.model.trim() || null,
+      serial_number: componentForm.serialNumber.trim() || null,
+      specification: componentForm.specification.trim() || null,
+      quantity: Math.max(1, Number(componentForm.quantity) || 1),
+      status: componentForm.status,
+      condition: componentForm.condition,
+      installed_date: componentForm.installedDate || null,
+      removed_date: componentForm.removedDate || null,
+      supplier: componentForm.supplier.trim() || null,
+      purchase_date: componentForm.purchaseDate || null,
+      warranty_expiry: componentForm.warrantyExpiry || null,
+      location: componentForm.location.trim() || null,
+      installed_by: componentForm.installedBy.trim() || null,
+      removed_by: componentForm.removedBy.trim() || null,
+      notes: componentForm.notes.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      if (componentBeingReplaced) {
+        const today = new Date().toISOString().slice(0, 10);
+        const performedBy =
+          user?.email ||
+          componentForm.installedBy.trim() ||
+          "ICT Staff";
+
+        const { error: oldComponentError } = await supabase
+          .from("asset_components")
+          .update({
+            status: "Replaced",
+            removed_date: today,
+            removed_by: performedBy,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", componentBeingReplaced.id);
+
+        if (oldComponentError) throw oldComponentError;
+
+        const { error: oldHistoryError } = await supabase
+          .from("asset_component_history")
+          .insert({
+            component_id: componentBeingReplaced.id,
+            asset_id: componentBeingReplaced.asset_id,
+            asset_tag: componentBeingReplaced.asset_tag,
+            component_type: componentBeingReplaced.component_type,
+            component_name: componentBeingReplaced.component_name,
+            action: "Replaced",
+            previous_status: componentBeingReplaced.status,
+            new_status: "Replaced",
+            performed_by: performedBy,
+            reason: `Replaced by ${componentForm.componentName.trim()}`,
+            notes: componentBeingReplaced.notes,
+          });
+
+        if (oldHistoryError) throw oldHistoryError;
+
+        const replacementPayload = {
+          ...payload,
+          status: "Installed" as ComponentStatus,
+          removed_date: null,
+          removed_by: null,
+          created_at: new Date().toISOString(),
+        };
+
+        const { data: newComponent, error: newComponentError } = await supabase
+          .from("asset_components")
+          .insert(replacementPayload)
+          .select("id")
+          .single();
+
+        if (newComponentError) throw newComponentError;
+
+        const { error: newHistoryError } = await supabase
+          .from("asset_component_history")
+          .insert({
+            component_id: newComponent.id,
+            asset_id: Number(componentForm.assetId),
+            asset_tag: componentForm.assetTag.trim() || null,
+            component_type: componentForm.componentType.trim(),
+            component_name: componentForm.componentName.trim(),
+            action: "Installed",
+            previous_status: null,
+            new_status: "Installed",
+            performed_by: performedBy,
+            reason: `Replacement for ${componentBeingReplaced.component_name}`,
+            notes: componentForm.notes.trim() || null,
+          });
+
+        if (newHistoryError) throw newHistoryError;
+      } else if (componentForm.id) {
+        const existing = assetComponents.find((item) => item.id === componentForm.id);
+        const { error } = await supabase
+          .from("asset_components")
+          .update(payload)
+          .eq("id", componentForm.id);
+
+        if (error) throw error;
+
+        const { error: historyError } = await supabase
+          .from("asset_component_history")
+          .insert({
+            component_id: componentForm.id,
+            asset_id: Number(componentForm.assetId),
+            asset_tag: componentForm.assetTag.trim() || null,
+            component_type: componentForm.componentType.trim(),
+            component_name: componentForm.componentName.trim(),
+            action: "Updated",
+            previous_status: existing?.status || null,
+            new_status: componentForm.status,
+            performed_by: user?.email || componentForm.installedBy.trim() || "ICT Staff",
+            reason: "Component record edited",
+            notes: componentForm.notes.trim() || null,
+          });
+
+        if (historyError) throw historyError;
+      } else {
+        const { data, error } = await supabase
+          .from("asset_components")
+          .insert({ ...payload, created_at: new Date().toISOString() })
+          .select("id")
+          .single();
+
+        if (error) throw error;
+
+        const { error: historyError } = await supabase
+          .from("asset_component_history")
+          .insert({
+            component_id: data.id,
+            asset_id: Number(componentForm.assetId),
+            asset_tag: componentForm.assetTag.trim() || null,
+            component_type: componentForm.componentType.trim(),
+            component_name: componentForm.componentName.trim(),
+            action: componentForm.status === "Installed" ? "Installed" : "Added",
+            previous_status: null,
+            new_status: componentForm.status,
+            performed_by: user?.email || componentForm.installedBy.trim() || "ICT Staff",
+            reason: "Component added to asset",
+            notes: componentForm.notes.trim() || null,
+          });
+
+        if (historyError) throw historyError;
+      }
+
+      const successMessage = componentBeingReplaced
+        ? "Component replaced successfully."
+        : componentForm.id
+          ? "Component updated."
+          : "Component added.";
+
+      resetComponentForm();
+      await refreshAll(false);
+      alert(successMessage);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to save component");
+    } finally {
+      setSavingComponent(false);
+    }
+  }
+
+  async function handleDeleteComponent(component: AssetComponent) {
+    if (!isAdmin) {
+      alert("Only admin users can delete components.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${component.component_name} from ${component.asset_tag || "this asset"}?`
+    );
+    if (!confirmed) return;
+
+    setDeletingComponentId(component.id);
+
+    try {
+      const { error: historyError } = await supabase
+        .from("asset_component_history")
+        .insert({
+          component_id: component.id,
+          asset_id: component.asset_id,
+          asset_tag: component.asset_tag,
+          component_type: component.component_type,
+          component_name: component.component_name,
+          action: "Removed",
+          previous_status: component.status,
+          new_status: "Removed",
+          performed_by: user?.email || "ICT Staff",
+          reason: "Component record deleted",
+          notes: component.notes,
+        });
+
+      if (historyError) throw historyError;
+
+      const { error } = await supabase
+        .from("asset_components")
+        .delete()
+        .eq("id", component.id);
+
+      if (error) throw error;
+
+      await refreshAll(false);
+      alert("Component deleted.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to delete component");
+    } finally {
+      setDeletingComponentId(null);
+    }
   }
 
   function resetMaintenanceForm() {
@@ -3466,6 +4291,18 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
             .watch { background: #fef3c7; color: #92400e; }
             .upgrade { background: #fed7aa; color: #9a3412; }
             .critical { background: #fee2e2; color: #991b1b; }
+            .report-note { margin: 0 0 10px; font-size: 12px; color: #64748b; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+            tr { break-inside: avoid; page-break-inside: avoid; }
+            @page { size: A4 landscape; margin: 10mm; }
+            @media print {
+              body { padding: 0; }
+              .hero { break-inside: avoid; page-break-inside: avoid; }
+              .grid { break-inside: avoid; page-break-inside: avoid; }
+              table { font-size: 9px; }
+              th, td { padding: 5px 6px; }
+            }
           </style>
         </head>
         <body>
@@ -3532,20 +4369,30 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   }
 
   function exportInventoryPdf() {
-    const rows = filteredAssets
+    // Inventory PDF must always include the complete asset register.
+    // The on-screen search and filters should not reduce the exported report.
+    const inventoryAssets = [...enrichedAssets].sort((a, b) =>
+      a.asset_tag.localeCompare(b.asset_tag)
+    );
+
+    const rows = inventoryAssets
       .map((asset) => {
-        const health = computeAssetHealth(asset, latestAuditByAssetId.get(asset.id));
+        const health = computeAssetHealth(
+          asset,
+          latestAuditByAssetId.get(asset.id),
+          activeMaintenanceByAssetId.get(asset.id)
+        );
         return `
           <tr>
-            <td>${asset.asset_tag}</td>
-            <td>${asset.item_name}</td>
-            <td>${asset.category || "-"}</td>
-            <td>${asset.location || "-"}</td>
-            <td>${asset.assigned_to || "-"}</td>
-            <td>${asset.os || "-"}</td>
-            <td>${asset.ram || "-"}</td>
-            <td>${asset.storage || "-"}</td>
-            <td><span class="${healthPillClassForPdf(health.label)}">${health.label}</span></td>
+            <td>${safeHtml(asset.asset_tag)}</td>
+            <td>${safeHtml(asset.item_name)}</td>
+            <td>${safeHtml(asset.category || "-")}</td>
+            <td>${safeHtml(asset.location || "-")}</td>
+            <td>${safeHtml(asset.assigned_to || "-")}</td>
+            <td>${safeHtml(asset.os || "-")}</td>
+            <td>${safeHtml(asset.ram || "-")}</td>
+            <td>${safeHtml(asset.storage || "-")}</td>
+            <td><span class="${healthPillClassForPdf(health.label)}">${safeHtml(health.label)}</span></td>
             <td>${health.score}%</td>
           </tr>
         `;
@@ -3554,13 +4401,14 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
 
     const content = `
       <div class="grid">
-        <div class="card"><div class="label">Rows Exported</div><div class="value">${filteredAssets.length}</div></div>
+        <div class="card"><div class="label">Rows Exported</div><div class="value">${inventoryAssets.length}</div></div>
         <div class="card"><div class="label">In Use</div><div class="value">${stats.inUse}</div></div>
         <div class="card"><div class="label">Slow Devices</div><div class="value">${stats.slowDevices}</div></div>
         <div class="card"><div class="label">Critical</div><div class="value">${stats.critical}</div></div>
       </div>
       <div class="section">
-        <h2>Inventory Export</h2>
+        <h2>Complete ICT Inventory</h2>
+        <p class="report-note">This report contains the full ICT asset register and is not limited by the current on-screen search or filters.</p>
         <table>
           <thead>
             <tr>
@@ -3584,39 +4432,71 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
       "KOPKOP College ICT Inventory Export",
       buildPdfShell(
         "KOPKOP College ICT Inventory Export",
-        "Use your browser's Save as PDF option in the print dialog to export this inventory report.",
+        "Complete ICT asset register prepared for printing or saving as PDF.",
         content
       )
     );
   }
 
   function exportAlertsPdf() {
-    const flaggedAssets = filteredAssets
-      .map((asset) => ({ asset, health: computeAssetHealth(asset, latestAuditByAssetId.get(asset.id)) }))
-      .filter(({ health }) => health.label === "Needs Upgrade" || health.label === "Critical" || health.alerts.length > 0);
+    // Use the complete enriched asset register so the PDF is not affected by
+    // the current inventory search box or on-screen filters.
+    const flaggedAssets = enrichedAssets
+      .filter(
+        (asset) =>
+          asset.healthLabel === "Watch" ||
+          asset.healthLabel === "Needs Upgrade" ||
+          asset.healthLabel === "Critical" ||
+          asset.alerts.length > 0
+      )
+      .sort((a, b) => {
+        if (a.displayScore !== b.displayScore) return a.displayScore - b.displayScore;
+        return a.asset_tag.localeCompare(b.asset_tag);
+      });
+
+    const flaggedNeedsUpgrade = flaggedAssets.filter(
+      (asset) => asset.healthLabel === "Needs Upgrade"
+    ).length;
+    const flaggedCritical = flaggedAssets.filter(
+      (asset) => asset.healthLabel === "Critical"
+    ).length;
+    const flaggedWindowsUpdates = flaggedAssets.filter((asset) => {
+      const update = (asset.windows_update || "").toLowerCase();
+      return update.includes("not") || update.includes("pending");
+    }).length;
 
     const rows = flaggedAssets
-      .map(({ asset, health }) => `
-        <tr>
-          <td>${asset.asset_tag}</td>
-          <td>${asset.item_name}</td>
-          <td>${asset.location || "-"}</td>
-          <td><span class="${healthPillClassForPdf(health.label)}">${health.label}</span></td>
-          <td>${health.score}%</td>
-          <td>${health.alerts.join(", ") || "-"}</td>
-        </tr>
-      `)
+      .map((asset) => {
+        const attention =
+          asset.alerts.length > 0
+            ? asset.alerts.join(", ")
+            : asset.recommendation || "Review device condition";
+
+        return `
+          <tr>
+            <td>${safeHtml(asset.asset_tag)}</td>
+            <td>${safeHtml(asset.item_name)}</td>
+            <td>${safeHtml(asset.location || "-")}</td>
+            <td><span class="${healthPillClassForPdf(asset.healthLabel)}">${safeHtml(asset.healthLabel)}</span></td>
+            <td>${safeHtml(asset.displayScore)}%</td>
+            <td>${safeHtml(attention)}</td>
+          </tr>
+        `;
+      })
       .join("");
 
     const content = `
       <div class="grid">
         <div class="card"><div class="label">Flagged Devices</div><div class="value">${flaggedAssets.length}</div></div>
-        <div class="card"><div class="label">Needs Upgrade</div><div class="value">${stats.needsUpgrade}</div></div>
-        <div class="card"><div class="label">Critical</div><div class="value">${stats.critical}</div></div>
-        <div class="card"><div class="label">Windows Updates Needed</div><div class="value">${stats.outdated}</div></div>
+        <div class="card"><div class="label">Needs Upgrade</div><div class="value">${flaggedNeedsUpgrade}</div></div>
+        <div class="card"><div class="label">Critical</div><div class="value">${flaggedCritical}</div></div>
+        <div class="card"><div class="label">Windows Updates Needed</div><div class="value">${flaggedWindowsUpdates}</div></div>
       </div>
       <div class="section">
         <h2>Priority Alert Export</h2>
+        <p style="margin:0 0 12px;color:#475569;font-size:12px;">
+          This report includes all Watch, Needs Upgrade and Critical devices and is not limited by the current on-screen search or filters.
+        </p>
         <table>
           <thead>
             <tr>
@@ -3628,15 +4508,16 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
               <th>Recommended Attention</th>
             </tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="6">No flagged devices found</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="6">No priority alerts found. All devices are currently classified as healthy.</td></tr>'}</tbody>
         </table>
       </div>
     `;
+
     openPrintWindow(
       "KOPKOP College ICT Priority Alerts",
       buildPdfShell(
         "KOPKOP College ICT Priority Alerts",
-        "Use your browser's Save as PDF option in the print dialog to export this alerts report.",
+        "Complete ICT priority alert register prepared for printing or saving as PDF.",
         content
       )
     );
@@ -4024,7 +4905,10 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                           <p className="truncate text-sm font-black text-slate-900">{asset.asset_tag} · {asset.item_name}</p>
                           <p className="mt-1 truncate text-xs text-slate-500">{asset.location || "No location"} · {asset.recommendation}</p>
                         </div>
-                        <HealthIndicator score={asset.displayScore} />
+                        <div className="flex flex-wrap gap-2">
+                          <HealthIndicator score={asset.displayScore} />
+                          <OperationalIndicator status={asset.operationalStatus} />
+                        </div>
                       </button>
                     ))}
                   {attentionDevices === 0 ? (
@@ -4378,7 +5262,12 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                                 <div className="flex flex-wrap gap-2">
                                   <Badge text={record.status || "Open"} className={statusPillClass(record.status)} />
                                   <Badge text={record.priority || "Medium"} className={statusPillClass(record.priority)} />
-                                  {relatedAsset ? <HealthIndicator score={relatedAsset.displayScore} /> : null}
+                                  {relatedAsset ? (
+                                    <>
+                                      <HealthIndicator score={relatedAsset.displayScore} />
+                                      <OperationalIndicator status={relatedAsset.operationalStatus} />
+                                    </>
+                                  ) : null}
                                 </div>
 
                                 <div className="flex flex-wrap gap-2">
@@ -4549,6 +5438,7 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                         savingAudit={savingAudit}
                         savingMaintenance={savingMaintenance}
                         openDeviceProfile={openDeviceProfile}
+                        openEditAsset={fillAssetForm}
                         openAuditForAsset={openAuditForAsset}
                         createMaintenance={createMaintenance}
                       />
@@ -4590,7 +5480,10 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                               <p className="text-xs text-slate-500">{asset.ram || "-"}</p>
                             </td>
                             <td className="px-4 py-3">
-                              <HealthIndicator score={asset.displayScore} />
+                              <div className="flex flex-wrap gap-2">
+                          <HealthIndicator score={asset.displayScore} />
+                          <OperationalIndicator status={asset.operationalStatus} />
+                        </div>
                             </td>
                             <td className="px-4 py-3">
                               <Badge text={asset.status || "-"} className={statusPillClass(asset.status)} />
@@ -4686,7 +5579,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2">
                           <HealthIndicator score={selectedAsset.displayScore} />
+                          <OperationalIndicator status={selectedAsset.operationalStatus} />
+                        </div>
+                            <OperationalIndicator status={selectedAsset.operationalStatus} />
+                          </div>
                           <Badge text={selectedAsset.status || "-"} className={statusPillClass(selectedAsset.status)} />
                         </div>
                       </div>
@@ -4711,7 +5610,10 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Health summary</p>
                       <div className="mt-3 flex items-center justify-between">
                         <p className="text-4xl font-bold text-slate-900">{selectedAsset.displayScore}%</p>
-                        <HealthIndicator score={selectedAsset.displayScore} />
+                        <div className="flex flex-wrap gap-2">
+                          <HealthIndicator score={selectedAsset.displayScore} />
+                          <OperationalIndicator status={selectedAsset.operationalStatus} />
+                        </div>
                       </div>
                       <p className="mt-4 text-sm font-medium text-slate-800">{selectedAsset.recommendation}</p>
                       <div className="mt-4 flex flex-wrap gap-2">
@@ -4740,6 +5642,86 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                     </div>
                   </div>
                 </div>
+
+                <ComponentManager
+                  assetTag={selectedAsset.asset_tag}
+                  components={selectedAssetComponents}
+                  isAdmin={isAdmin}
+                  deletingComponentId={deletingComponentId}
+                  onAddComponent={openAddComponentForm}
+                  onEditComponent={openEditComponentForm}
+                  onReplaceComponent={openReplaceComponentForm}
+                  onDeleteComponent={handleDeleteComponent}
+                />
+
+                {showComponentForm ? (
+                  <form onSubmit={handleSaveComponent} className="rounded-3xl border border-cyan-200 bg-white p-5 shadow-sm">
+                    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-900">
+                          {componentBeingReplaced
+                            ? "Replace Component"
+                            : componentForm.id
+                              ? "Edit Component"
+                              : "Add Component"}
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                          {selectedAsset.asset_tag} · {selectedAsset.item_name}
+                        </p>
+                      </div>
+                      <button type="button" onClick={resetComponentForm} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">
+                        Close
+                      </button>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      <label className="text-sm font-semibold text-slate-700">
+                        Component Type *
+                        <select value={componentForm.componentType} onChange={(event) => setComponentForm((current) => ({ ...current, componentType: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal outline-none focus:border-cyan-600">
+                          <option>RAM</option><option>SSD</option><option>HDD</option><option>Processor</option><option>Motherboard</option><option>Power Supply</option><option>CMOS Battery</option><option>Graphics Card</option><option>Network Card</option><option>Wi-Fi Card</option><option>Keyboard</option><option>Mouse</option><option>Monitor</option><option>Charger</option><option>HDMI Cable</option><option>Other</option>
+                        </select>
+                      </label>
+
+                      <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
+                        Component Name *
+                        <input value={componentForm.componentName} onChange={(event) => setComponentForm((current) => ({ ...current, componentName: event.target.value }))} placeholder="Example: Kingston 8GB DDR4 RAM" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal outline-none focus:border-cyan-600" />
+                      </label>
+
+                      <label className="text-sm font-semibold text-slate-700">Brand<input value={componentForm.brand} onChange={(event) => setComponentForm((current) => ({ ...current, brand: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                      <label className="text-sm font-semibold text-slate-700">Model<input value={componentForm.model} onChange={(event) => setComponentForm((current) => ({ ...current, model: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                      <label className="text-sm font-semibold text-slate-700">Serial Number<input value={componentForm.serialNumber} onChange={(event) => setComponentForm((current) => ({ ...current, serialNumber: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+
+                      <label className="text-sm font-semibold text-slate-700 sm:col-span-2 xl:col-span-3">Specification<textarea rows={3} value={componentForm.specification} onChange={(event) => setComponentForm((current) => ({ ...current, specification: event.target.value }))} placeholder="Example: 8GB DDR4 2666MHz" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+
+                      <label className="text-sm font-semibold text-slate-700">Quantity<input type="number" min="1" value={componentForm.quantity} onChange={(event) => setComponentForm((current) => ({ ...current, quantity: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                      <label className="text-sm font-semibold text-slate-700">Status<select value={componentForm.status} onChange={(event) => setComponentForm((current) => ({ ...current, status: event.target.value as ComponentStatus }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"><option>Installed</option><option>In Store</option><option>Removed</option><option>Faulty</option><option>Replaced</option><option>Disposed</option></select></label>
+                      <label className="text-sm font-semibold text-slate-700">Condition<select value={componentForm.condition} onChange={(event) => setComponentForm((current) => ({ ...current, condition: event.target.value as ComponentCondition }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal"><option>Good</option><option>Fair</option><option>Faulty</option><option>Damaged</option></select></label>
+
+                      <label className="text-sm font-semibold text-slate-700">Installed Date<input type="date" value={componentForm.installedDate} onChange={(event) => setComponentForm((current) => ({ ...current, installedDate: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                      <label className="text-sm font-semibold text-slate-700">Installed By<input value={componentForm.installedBy} onChange={(event) => setComponentForm((current) => ({ ...current, installedBy: event.target.value }))} placeholder="Example: Angelo Kimui" className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                      <label className="text-sm font-semibold text-slate-700">Location<input value={componentForm.location} onChange={(event) => setComponentForm((current) => ({ ...current, location: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+
+                      <label className="text-sm font-semibold text-slate-700">Supplier<input value={componentForm.supplier} onChange={(event) => setComponentForm((current) => ({ ...current, supplier: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                      <label className="text-sm font-semibold text-slate-700">Purchase Date<input type="date" value={componentForm.purchaseDate} onChange={(event) => setComponentForm((current) => ({ ...current, purchaseDate: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                      <label className="text-sm font-semibold text-slate-700">Warranty Expiry<input type="date" value={componentForm.warrantyExpiry} onChange={(event) => setComponentForm((current) => ({ ...current, warrantyExpiry: event.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+
+                      <label className="text-sm font-semibold text-slate-700 sm:col-span-2 xl:col-span-3">Notes<textarea rows={4} value={componentForm.notes} onChange={(event) => setComponentForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Record installation, fault, upgrade, or replacement details." className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 font-normal" /></label>
+                    </div>
+
+                    <div className="mt-5 flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end">
+                      <button type="button" onClick={resetComponentForm} className="rounded-2xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700">Cancel</button>
+                      <button type="submit" disabled={savingComponent} className="rounded-2xl bg-cyan-700 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                        {savingComponent
+                          ? "Saving Component..."
+                          : componentBeingReplaced
+                            ? "Replace Component"
+                            : componentForm.id
+                              ? "Update Component"
+                              : "Save Component"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
 
                 <div className="grid gap-6 xl:grid-cols-2">
                   <div className="rounded-3xl bg-white p-5 shadow-sm">
@@ -4983,74 +5965,258 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
               <div className="rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle
                   title={editingAssetId ? "Edit asset record" : "Add new asset"}
-                  subtitle="This form captures both inventory details and technical device information from your Excel sheet."
+                  subtitle="Register computers, projectors, printers, network equipment, CCTV devices and other ICT assets."
                 />
-                <form onSubmit={handleSaveAsset} className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Asset Tag" value={assetForm.assetTag} onChange={(e) => setAssetForm({ ...assetForm, assetTag: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Computer Name / Item Name" value={assetForm.itemName} onChange={(e) => setAssetForm({ ...assetForm, itemName: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Device Type" value={assetForm.category} onChange={(e) => setAssetForm({ ...assetForm, category: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Assigned To" value={assetForm.assignedTo} onChange={(e) => setAssetForm({ ...assetForm, assignedTo: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Brand" value={assetForm.brand} onChange={(e) => setAssetForm({ ...assetForm, brand: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Model" value={assetForm.model} onChange={(e) => setAssetForm({ ...assetForm, model: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Serial Number" value={assetForm.serialNumber} onChange={(e) => setAssetForm({ ...assetForm, serialNumber: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Location / Department" value={assetForm.location} onChange={(e) => setAssetForm({ ...assetForm, location: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Quantity" value={assetForm.quantity} onChange={(e) => setAssetForm({ ...assetForm, quantity: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Supplier" value={assetForm.supplier} onChange={(e) => setAssetForm({ ...assetForm, supplier: e.target.value })} />
-                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.condition} onChange={(e) => setAssetForm({ ...assetForm, condition: e.target.value as AssetCondition })}>
-                      <option>Good</option><option>Fair</option><option>Damaged</option>
-                    </select>
-                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.status} onChange={(e) => setAssetForm({ ...assetForm, status: e.target.value as AssetStatus })}>
-                      <option>In Store</option><option>In Use</option><option>Under Repair</option><option>Damaged</option><option>Lost</option><option>Retired</option>
-                    </select>
-                    <input type="date" className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.purchaseDate} onChange={(e) => setAssetForm({ ...assetForm, purchaseDate: e.target.value })} />
-                    <input type="date" className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={assetForm.warrantyExpiry} onChange={(e) => setAssetForm({ ...assetForm, warrantyExpiry: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="OS" value={assetForm.os} onChange={(e) => setAssetForm({ ...assetForm, os: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="RAM" value={assetForm.ram} onChange={(e) => setAssetForm({ ...assetForm, ram: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="System Type" value={assetForm.systemType} onChange={(e) => setAssetForm({ ...assetForm, systemType: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Connection Type" value={assetForm.connectionType} onChange={(e) => setAssetForm({ ...assetForm, connectionType: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="MS Office" value={assetForm.msOffice} onChange={(e) => setAssetForm({ ...assetForm, msOffice: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Monitor" value={assetForm.monitor} onChange={(e) => setAssetForm({ ...assetForm, monitor: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Keyboard" value={assetForm.keyboard} onChange={(e) => setAssetForm({ ...assetForm, keyboard: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Mouse" value={assetForm.mouse} onChange={(e) => setAssetForm({ ...assetForm, mouse: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Charger" value={assetForm.charger} onChange={(e) => setAssetForm({ ...assetForm, charger: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Headset" value={assetForm.headset} onChange={(e) => setAssetForm({ ...assetForm, headset: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Storage" value={assetForm.storage} onChange={(e) => setAssetForm({ ...assetForm, storage: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="CPU / Processor" value={assetForm.processor} onChange={(e) => setAssetForm({ ...assetForm, processor: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="GPU / Graphics" value={assetForm.gpu} onChange={(e) => setAssetForm({ ...assetForm, gpu: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Motherboard" value={assetForm.motherboard} onChange={(e) => setAssetForm({ ...assetForm, motherboard: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="BIOS Version" value={assetForm.biosVersion} onChange={(e) => setAssetForm({ ...assetForm, biosVersion: e.target.value })} />
-                    <label className="rounded-2xl border border-slate-200 px-4 py-2 text-xs text-slate-500">BIOS Date<input type="date" className="mt-1 w-full text-sm text-slate-900 outline-none" value={assetForm.biosDate} onChange={(e) => setAssetForm({ ...assetForm, biosDate: e.target.value })} /></label>
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="TPM Status (for example: TPM 2.0 Enabled)" value={assetForm.tpmStatus} onChange={(e) => setAssetForm({ ...assetForm, tpmStatus: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Hostname" value={assetForm.hostname} onChange={(e) => setAssetForm({ ...assetForm, hostname: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="IP Address" value={assetForm.ipAddress} onChange={(e) => setAssetForm({ ...assetForm, ipAddress: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="MAC Address" value={assetForm.macAddress} onChange={(e) => setAssetForm({ ...assetForm, macAddress: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Online Status" value={assetForm.onlineStatus} onChange={(e) => setAssetForm({ ...assetForm, onlineStatus: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Windows Update" value={assetForm.windowsUpdate} onChange={(e) => setAssetForm({ ...assetForm, windowsUpdate: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Desktop Loading Speed" value={assetForm.desktopLoadingSpeed} onChange={(e) => setAssetForm({ ...assetForm, desktopLoadingSpeed: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Booting Speed" value={assetForm.bootingSpeed} onChange={(e) => setAssetForm({ ...assetForm, bootingSpeed: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Performance" value={assetForm.performance} onChange={(e) => setAssetForm({ ...assetForm, performance: e.target.value })} />
-                  </div>
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+
+                <form onSubmit={handleSaveAsset} className="space-y-5">
+                  <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-4">
+                      <h3 className="font-bold text-slate-900">Basic Asset Information</h3>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Enter the identity, assignment and purchasing details for the asset.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Asset Tag"
+                        value={assetForm.assetTag}
+                        onChange={(e) => setAssetForm({ ...assetForm, assetTag: e.target.value })}
+                        required
+                      />
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Device / Item Name"
+                        value={assetForm.itemName}
+                        onChange={(e) => setAssetForm({ ...assetForm, itemName: e.target.value })}
+                        required
+                      />
+
+                      <div>
+                        <input
+                          list="device-category-options"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                          placeholder="Select or type device category"
+                          value={assetForm.category}
+                          onChange={(e) => setAssetForm({ ...assetForm, category: e.target.value })}
+                          required
+                        />
+                        <datalist id="device-category-options">
+                          {DEVICE_CATEGORIES.map((category) => (
+                            <option key={category} value={category} />
+                          ))}
+                        </datalist>
+                      </div>
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Assigned To"
+                        value={assetForm.assignedTo}
+                        onChange={(e) => setAssetForm({ ...assetForm, assignedTo: e.target.value })}
+                      />
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Brand"
+                        value={assetForm.brand}
+                        onChange={(e) => setAssetForm({ ...assetForm, brand: e.target.value })}
+                      />
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Model"
+                        value={assetForm.model}
+                        onChange={(e) => setAssetForm({ ...assetForm, model: e.target.value })}
+                      />
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Serial Number"
+                        value={assetForm.serialNumber}
+                        onChange={(e) => setAssetForm({ ...assetForm, serialNumber: e.target.value })}
+                      />
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Location / Department"
+                        value={assetForm.location}
+                        onChange={(e) => setAssetForm({ ...assetForm, location: e.target.value })}
+                      />
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Quantity"
+                        inputMode="numeric"
+                        value={assetForm.quantity}
+                        onChange={(e) => setAssetForm({ ...assetForm, quantity: e.target.value })}
+                      />
+
+                      <input
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        placeholder="Supplier"
+                        value={assetForm.supplier}
+                        onChange={(e) => setAssetForm({ ...assetForm, supplier: e.target.value })}
+                      />
+
+                      <select
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        value={assetForm.condition}
+                        onChange={(e) =>
+                          setAssetForm({ ...assetForm, condition: e.target.value as AssetCondition })
+                        }
+                      >
+                        <option>Good</option>
+                        <option>Fair</option>
+                        <option>Damaged</option>
+                      </select>
+
+                      <select
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                        value={assetForm.status}
+                        onChange={(e) =>
+                          setAssetForm({ ...assetForm, status: e.target.value as AssetStatus })
+                        }
+                      >
+                        <option>In Store</option>
+                        <option>In Use</option>
+                        <option>Under Repair</option>
+                        <option>Damaged</option>
+                        <option>Lost</option>
+                        <option>Retired</option>
+                      </select>
+
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-slate-500">Purchase Date</span>
+                        <input
+                          type="date"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                          value={assetForm.purchaseDate}
+                          onChange={(e) => setAssetForm({ ...assetForm, purchaseDate: e.target.value })}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-slate-500">Warranty Expiry</span>
+                        <input
+                          type="date"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                          value={assetForm.warrantyExpiry}
+                          onChange={(e) => setAssetForm({ ...assetForm, warrantyExpiry: e.target.value })}
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  {isComputerAsset && (
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-4">
+                        <h3 className="font-bold text-slate-900">Computer Specifications</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          These fields appear only for desktops, laptops and servers.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Operating System" value={assetForm.os} onChange={(e) => setAssetForm({ ...assetForm, os: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="RAM" value={assetForm.ram} onChange={(e) => setAssetForm({ ...assetForm, ram: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="System Type" value={assetForm.systemType} onChange={(e) => setAssetForm({ ...assetForm, systemType: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Microsoft Office" value={assetForm.msOffice} onChange={(e) => setAssetForm({ ...assetForm, msOffice: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Storage" value={assetForm.storage} onChange={(e) => setAssetForm({ ...assetForm, storage: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="CPU / Processor" value={assetForm.processor} onChange={(e) => setAssetForm({ ...assetForm, processor: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="GPU / Graphics" value={assetForm.gpu} onChange={(e) => setAssetForm({ ...assetForm, gpu: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Motherboard" value={assetForm.motherboard} onChange={(e) => setAssetForm({ ...assetForm, motherboard: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="BIOS Version" value={assetForm.biosVersion} onChange={(e) => setAssetForm({ ...assetForm, biosVersion: e.target.value })} />
+                        <input type="date" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={assetForm.biosDate} onChange={(e) => setAssetForm({ ...assetForm, biosDate: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="TPM Status" value={assetForm.tpmStatus} onChange={(e) => setAssetForm({ ...assetForm, tpmStatus: e.target.value })} />
+                      </div>
+                    </section>
+                  )}
+
+                  {showsComputerAccessories && (
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-4">
+                        <h3 className="font-bold text-slate-900">Included Accessories</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Record accessories issued with the computer.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Monitor" value={assetForm.monitor} onChange={(e) => setAssetForm({ ...assetForm, monitor: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Keyboard" value={assetForm.keyboard} onChange={(e) => setAssetForm({ ...assetForm, keyboard: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Mouse" value={assetForm.mouse} onChange={(e) => setAssetForm({ ...assetForm, mouse: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Charger / Power Adapter" value={assetForm.charger} onChange={(e) => setAssetForm({ ...assetForm, charger: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm sm:col-span-2" placeholder="Headset or other included accessory" value={assetForm.headset} onChange={(e) => setAssetForm({ ...assetForm, headset: e.target.value })} />
+                      </div>
+                    </section>
+                  )}
+
+                  {isNetworkAsset && (
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-4">
+                        <h3 className="font-bold text-slate-900">Network Information</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Shown for computers and devices that may connect to the school network.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Connection Type" value={assetForm.connectionType} onChange={(e) => setAssetForm({ ...assetForm, connectionType: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Hostname / Device Name" value={assetForm.hostname} onChange={(e) => setAssetForm({ ...assetForm, hostname: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="IP Address" value={assetForm.ipAddress} onChange={(e) => setAssetForm({ ...assetForm, ipAddress: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="MAC Address" value={assetForm.macAddress} onChange={(e) => setAssetForm({ ...assetForm, macAddress: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm sm:col-span-2" placeholder="Online Status" value={assetForm.onlineStatus} onChange={(e) => setAssetForm({ ...assetForm, onlineStatus: e.target.value })} />
+                      </div>
+                    </section>
+                  )}
+
+                  {showsPerformanceChecks && (
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-4">
+                        <h3 className="font-bold text-slate-900">Performance Check</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Record the current Windows and performance condition of the computer.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Windows Update Status" value={assetForm.windowsUpdate} onChange={(e) => setAssetForm({ ...assetForm, windowsUpdate: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Desktop Loading Speed" value={assetForm.desktopLoadingSpeed} onChange={(e) => setAssetForm({ ...assetForm, desktopLoadingSpeed: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Booting Speed" value={assetForm.bootingSpeed} onChange={(e) => setAssetForm({ ...assetForm, bootingSpeed: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Overall Performance" value={assetForm.performance} onChange={(e) => setAssetForm({ ...assetForm, performance: e.target.value })} />
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-4">
                       <h3 className="font-bold text-slate-900">Device Photos</h3>
-                      <p className="mt-1 text-xs text-slate-500">Upload a front view, back view and serial/asset-label photo. Enter the Asset Tag first.</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Upload an overall view, an optional additional view and the asset or serial label. Enter the Asset Tag first.
+                      </p>
                     </div>
+
                     <div className="grid gap-4 md:grid-cols-3">
                       {([
-                        ["front", "Front View", assetForm.photoFrontUrl],
-                        ["back", "Back View", assetForm.photoBackUrl],
-                        ["label", "Serial / Asset Label", assetForm.photoLabelUrl],
+                        ["front", "Overall Device", assetForm.photoFrontUrl],
+                        ["back", "Additional Photo", assetForm.photoBackUrl],
+                        ["label", "Asset / Serial Label", assetForm.photoLabelUrl],
                       ] as const).map(([slot, label, url]) => (
                         <div key={slot} className="rounded-2xl border border-slate-200 bg-white p-3">
                           <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-100">
                             {url ? (
                               <img src={url} alt={label} className="h-full w-full object-cover" />
                             ) : (
-                              <div className="grid h-full place-items-center px-3 text-center text-xs text-slate-400">No {label.toLowerCase()} uploaded</div>
+                              <div className="grid h-full place-items-center px-3 text-center text-xs text-slate-400">
+                                No {label.toLowerCase()} uploaded
+                              </div>
                             )}
                           </div>
+
                           <p className="mt-3 text-sm font-semibold text-slate-800">{label}</p>
+
                           <div className="mt-2 flex flex-wrap gap-2">
                             <label className="cursor-pointer rounded-xl bg-cyan-700 px-3 py-2 text-xs font-semibold text-white">
                               {uploadingPhotoSlot === slot ? "Uploading..." : url ? "Replace" : "Upload"}
@@ -5066,8 +6232,13 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                                 }}
                               />
                             </label>
+
                             {url ? (
-                              <button type="button" onClick={() => clearAssetPhoto(slot)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
+                              <button
+                                type="button"
+                                onClick={() => clearAssetPhoto(slot)}
+                                className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
+                              >
                                 Remove
                               </button>
                             ) : null}
@@ -5075,14 +6246,34 @@ export default function KopkopCollegeICTAssetAuditComplianceSystem() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                  <textarea className="min-h-[100px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Notes" value={assetForm.notes} onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })} />
+                  </section>
+
+                  <textarea
+                    className="min-h-[110px] w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                    placeholder={
+                      isComputerAsset
+                        ? "Notes"
+                        : "Notes / specifications for this device (for example projector resolution, printer toner model, switch ports, UPS capacity or CCTV details)"
+                    }
+                    value={assetForm.notes}
+                    onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })}
+                  />
+
                   <div className="flex flex-wrap gap-3">
-                    <button type="submit" className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
+                    <button
+                      type="submit"
+                      disabled={savingAsset || uploadingPhotoSlot !== null}
+                      className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
                       {savingAsset ? "Saving..." : editingAssetId ? "Update Asset" : "Save Asset"}
                     </button>
+
                     {editingAssetId ? (
-                      <button type="button" onClick={resetAssetForm} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
+                      <button
+                        type="button"
+                        onClick={resetAssetForm}
+                        className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+                      >
                         Cancel Edit
                       </button>
                     ) : null}
