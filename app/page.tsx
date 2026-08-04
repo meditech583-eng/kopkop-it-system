@@ -4267,51 +4267,311 @@ async function loadComponentHistory() {
   }
 
   function buildPdfShell(title: string, subtitle: string, content: string) {
+    const generatedAt = new Date();
+    const logoUrl = `${window.location.origin}/kopkop-logo.png`;
+
+    const documentTitle = title
+      .replace(/^KOPKOP College\s*/i, "")
+      .toUpperCase();
+
+    const documentCode = title.toLowerCase().includes("summary")
+      ? "SR"
+      : title.toLowerCase().includes("inventory")
+        ? "IR"
+        : title.toLowerCase().includes("priority")
+          ? "PA"
+          : "RP";
+
+    const documentNumber = `${documentCode}-${generatedAt.getFullYear()}-${String(
+      generatedAt.getMonth() + 1
+    ).padStart(2, "0")}${String(generatedAt.getDate()).padStart(2, "0")}-${String(
+      generatedAt.getHours()
+    ).padStart(2, "0")}${String(generatedAt.getMinutes()).padStart(2, "0")}`;
+
     return `
+      <!DOCTYPE html>
       <html>
         <head>
-          <title>${title}</title>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${safeHtml(title)}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; }
-            h1 { margin: 0; font-size: 26px; }
-            h2 { margin: 0 0 10px; font-size: 18px; }
-            p { color: #475569; line-height: 1.5; }
-            .meta { margin-top: 8px; font-size: 12px; color: #64748b; }
-            .hero { border: 1px solid #cbd5e1; border-radius: 18px; padding: 18px 20px; background: linear-gradient(135deg, #f8fafc, #ecfeff); }
-            .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 22px; }
-            .card { border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; background: white; }
-            .label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .08em; }
-            .value { margin-top: 8px; font-size: 24px; font-weight: 700; color: #0f172a; }
-            .section { margin-top: 24px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
-            th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; vertical-align: top; }
-            th { background: #f8fafc; }
-            .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+            @page { size: A4 landscape; margin: 10mm; }
+
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+            }
+
+            body {
+              position: relative;
+              padding: 28px;
+            }
+
+            .watermark {
+              position: fixed;
+              left: 50%;
+              top: 50%;
+              width: 42%;
+              max-height: 70%;
+              object-fit: contain;
+              transform: translate(-50%, -50%);
+              opacity: 0.035;
+              z-index: 0;
+              pointer-events: none;
+            }
+
+            .report {
+              position: relative;
+              z-index: 1;
+              max-width: 1120px;
+              margin: 0 auto;
+            }
+
+            .official-header {
+              display: grid;
+              grid-template-columns: 92px 1fr 220px;
+              align-items: center;
+              gap: 18px;
+              padding-bottom: 14px;
+              border-bottom: 4px solid #0f3b63;
+            }
+
+            .official-logo {
+              width: 82px;
+              height: 82px;
+              object-fit: contain;
+            }
+
+            .school-name {
+              margin: 0;
+              color: #0f3b63;
+              font-size: 27px;
+              font-weight: 900;
+              letter-spacing: .08em;
+              line-height: 1;
+            }
+
+            .system-name {
+              margin-top: 7px;
+              color: #475569;
+              font-size: 12px;
+              font-weight: 700;
+              letter-spacing: .03em;
+            }
+
+            .document-title {
+              margin-top: 8px;
+              color: #0f172a;
+              font-size: 17px;
+              font-weight: 900;
+              letter-spacing: .14em;
+            }
+
+            .header-meta {
+              text-align: right;
+              color: #475569;
+              font-size: 10px;
+              line-height: 1.55;
+            }
+
+            .report-intro {
+              margin-top: 15px;
+              padding: 12px 16px;
+              border: 1px solid #cbd5e1;
+              border-radius: 10px;
+              background: #f8fafc;
+            }
+
+            .report-intro p {
+              margin: 0;
+              color: #475569;
+              font-size: 12px;
+              line-height: 1.45;
+            }
+
+            h2 {
+              margin: 0 0 10px;
+              color: #0f172a;
+              font-size: 18px;
+            }
+
+            p {
+              color: #475569;
+              line-height: 1.5;
+            }
+
+            .grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 12px;
+              margin: 18px 0 22px;
+            }
+
+            .card {
+              min-height: 82px;
+              padding: 14px;
+              border: 1px solid #cbd5e1;
+              border-radius: 12px;
+              background: #f8fafc;
+            }
+
+            .label {
+              color: #0f3b63;
+              font-size: 10px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: .09em;
+            }
+
+            .value {
+              margin-top: 8px;
+              color: #0f172a;
+              font-size: 25px;
+              font-weight: 900;
+            }
+
+            .section {
+              margin-top: 22px;
+              break-inside: avoid;
+            }
+
+            .section h2 {
+              padding-bottom: 8px;
+              border-bottom: 2px solid #0f3b63;
+              color: #0f3b63;
+              font-size: 16px;
+              text-transform: uppercase;
+              letter-spacing: .04em;
+            }
+
+            table {
+              width: 100%;
+              margin-top: 10px;
+              border-collapse: collapse;
+              background: rgba(255, 255, 255, .94);
+              font-size: 11px;
+            }
+
+            th, td {
+              padding: 7px 9px;
+              border: 1px solid #cbd5e1;
+              text-align: left;
+              vertical-align: top;
+            }
+
+            th {
+              background: #eaf1f7;
+              color: #0f3b63;
+              font-size: 10px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: .03em;
+            }
+
+            .pill {
+              display: inline-block;
+              padding: 4px 9px;
+              border-radius: 999px;
+              font-size: 10px;
+              font-weight: 800;
+            }
+
             .good { background: #dcfce7; color: #166534; }
             .watch { background: #fef3c7; color: #92400e; }
             .upgrade { background: #fed7aa; color: #9a3412; }
             .critical { background: #fee2e2; color: #991b1b; }
-            .report-note { margin: 0 0 10px; font-size: 12px; color: #64748b; }
+
+            .report-note {
+              margin: 0 0 10px;
+              color: #64748b;
+              font-size: 11px;
+            }
+
+            .official-footer {
+              margin-top: 22px;
+              padding-top: 9px;
+              border-top: 2px solid #0f3b63;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 20px;
+              color: #64748b;
+              font-size: 9px;
+            }
+
+            .footer-system {
+              color: #0f3b63;
+              font-weight: 800;
+              letter-spacing: .03em;
+            }
+
             thead { display: table-header-group; }
             tfoot { display: table-footer-group; }
             tr { break-inside: avoid; page-break-inside: avoid; }
-            @page { size: A4 landscape; margin: 10mm; }
+
             @media print {
               body { padding: 0; }
-              .hero { break-inside: avoid; page-break-inside: avoid; }
-              .grid { break-inside: avoid; page-break-inside: avoid; }
-              table { font-size: 9px; }
-              th, td { padding: 5px 6px; }
+              .report { max-width: none; }
+              .official-header,
+              .report-intro,
+              .grid,
+              .official-footer {
+                break-inside: avoid;
+                page-break-inside: avoid;
+              }
+              table { font-size: 8.5px; }
+              th, td { padding: 4px 5px; }
+              .official-footer {
+                position: relative;
+              }
             }
           </style>
         </head>
         <body>
-          <div class="hero">
-            <h1>${title}</h1>
-            <p>${subtitle}</p>
-            <div class="meta">KOPKOP College ICT Asset, Device Health & Audit System • Generated ${new Date().toLocaleString()}</div>
-          </div>
-          ${content}
+          <img class="watermark" src="${safeHtml(logoUrl)}" alt="" />
+
+          <main class="report">
+            <header class="official-header">
+              <img
+                class="official-logo"
+                src="${safeHtml(logoUrl)}"
+                alt="Kopkop College Logo"
+              />
+
+              <div>
+                <div class="school-name">KOPKOP COLLEGE</div>
+                <div class="system-name">ICT Asset, Device Health & Audit System</div>
+                <div class="document-title">${safeHtml(documentTitle)}</div>
+              </div>
+
+              <div class="header-meta">
+                <div><strong>Generated:</strong> ${safeHtml(generatedAt.toLocaleString())}</div>
+                <div><strong>Document:</strong> ${safeHtml(documentNumber)}</div>
+                <div><strong>Version:</strong> 2.1</div>
+              </div>
+            </header>
+
+            <section class="report-intro">
+              <p>${safeHtml(subtitle)}</p>
+            </section>
+
+            ${content}
+
+            <footer class="official-footer">
+              <span class="footer-system">KOPKOP College ICT Asset, Device Health & Audit System</span>
+              <span>${safeHtml(documentNumber)}</span>
+            </footer>
+          </main>
         </body>
       </html>
     `;
