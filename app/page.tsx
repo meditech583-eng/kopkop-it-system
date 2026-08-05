@@ -1024,7 +1024,7 @@ function DonutRing({
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-3 sm:gap-4">
+      <div className="flex items-center gap-4">
         <div className="grid h-20 w-20 place-items-center rounded-full" style={{ background }}>
           <div className="grid h-12 w-12 place-items-center rounded-full bg-white text-sm font-bold text-slate-900">
             {percent}%
@@ -1281,6 +1281,8 @@ const [deletingComponentId, setDeletingComponentId] =
   const [deletingAssetId, setDeletingAssetId] = useState<number | null>(null);
   const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
   const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
+  const [importingDeviceInfo, setImportingDeviceInfo] = useState(false);
+  const [lastImportedDevice, setLastImportedDevice] = useState<string | null>(null);
   const [auditForm, setAuditForm] = useState<AuditFormState>(EMPTY_AUDIT_FORM);
   const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormState>(EMPTY_MAINTENANCE_FORM);
   const [componentForm, setComponentForm] =
@@ -4068,9 +4070,308 @@ async function loadComponentHistory() {
     }));
   }
 
+  function formatImportedOfficeStatus(officeProducts: any[]) {
+    if (!Array.isArray(officeProducts) || officeProducts.length === 0) {
+      return "";
+    }
+
+    const product = officeProducts[0] || {};
+    const rawName = String(product.Name || product.name || "").toLowerCase();
+
+    let friendlyName = "Microsoft Office";
+    if (
+      rawName.includes("o365") ||
+      rawName.includes("365") ||
+      rawName.includes("subscription")
+    ) {
+      friendlyName = "Microsoft 365 Apps";
+    } else if (rawName.includes("office16")) {
+      friendlyName = "Microsoft Office 2016";
+    } else if (rawName.includes("office19")) {
+      friendlyName = "Microsoft Office 2019";
+    } else if (rawName.includes("office21")) {
+      friendlyName = "Microsoft Office 2021";
+    }
+
+    const statusCode = Number(product.LicenseStatus ?? product.license_status);
+    const statusMap: Record<number, string> = {
+      0: "Not activated",
+      1: "Activated",
+      2: "Grace period",
+      3: "Grace period",
+      4: "Licence issue",
+      5: "Licence attention required",
+      6: "Extended grace period",
+    };
+
+    const status = Number.isFinite(statusCode)
+      ? statusMap[statusCode] || `Status ${statusCode}`
+      : "";
+
+    return [friendlyName, status].filter(Boolean).join(" - ");
+  }
+
+  function formatImportedStorage(physicalDisks: any[]) {
+    if (!Array.isArray(physicalDisks) || physicalDisks.length === 0) {
+      return "";
+    }
+
+    return physicalDisks
+      .map((disk) => {
+        const size = Number(disk?.size_gb);
+        const sizeText = Number.isFinite(size) ? `${Math.round(size)} GB` : "";
+        const model = String(disk?.model || "").trim();
+        const searchText = `${model} ${disk?.media_type || ""}`.toLowerCase();
+
+        const driveType =
+          searchText.includes("nvme") ||
+          searchText.includes("ssd") ||
+          searchText.includes("solid state") ||
+          searchText.includes("kbg") ||
+          searchText.includes("samsung mz") ||
+          searchText.includes("micron")
+            ? "SSD"
+            : searchText.includes("hdd") ||
+                searchText.includes("hard disk") ||
+                searchText.includes("wd") ||
+                searchText.includes("seagate")
+              ? "HDD"
+              : "Storage";
+
+        return [sizeText, driveType].filter(Boolean).join(" ");
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+
+  function formatImportedTpmStatus(security: any) {
+    if (!security) return "";
+
+    const present = security.tpm_present;
+    const ready = security.tpm_ready;
+    const enabled = security.tpm_enabled;
+    const version = security.tpm_version;
+
+    if (present === false) return "TPM not present";
+    if (present == null && ready == null && enabled == null && !version) {
+      return "Not detected";
+    }
+
+    const parts = [
+      present === true ? "TPM present" : "",
+      ready === true ? "Ready" : ready === false ? "Not ready" : "",
+      enabled === true ? "Enabled" : enabled === false ? "Disabled" : "",
+      version ? `Version ${version}` : "",
+    ];
+
+    return parts.filter(Boolean).join(" - ");
+  }
+
+  function findExistingAssetForImport(imported: any) {
+    const serial = String(imported?.device?.serial_number || "").trim().toLowerCase();
+    const hostname = String(imported?.device?.computer_name || "").trim().toLowerCase();
+    const mac = String(imported?.network?.mac_address || "")
+      .replace(/[^a-f0-9]/gi, "")
+      .toLowerCase();
+
+    return assets.find((asset) => {
+      const assetSerial = String(asset.serial_number || "").trim().toLowerCase();
+      const assetHostname = String(asset.hostname || "").trim().toLowerCase();
+      const assetMac = String(asset.mac_address || "")
+        .replace(/[^a-f0-9]/gi, "")
+        .toLowerCase();
+
+      return (
+        (!!serial && !!assetSerial && serial === assetSerial) ||
+        (!!hostname && !!assetHostname && hostname === assetHostname) ||
+        (!!mac && !!assetMac && mac === assetMac)
+      );
+    });
+  }
+
+  async function handleDeviceInfoImport(file: File) {
+    if (!isAdmin) {
+      alert("Only admin users can import device information.");
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      alert("Please select the JSON file created by the KOPKOP Device Collector.");
+      return;
+    }
+
+    setImportingDeviceInfo(true);
+
+    try {
+      const rawText = await file.text();
+      const imported = JSON.parse(rawText);
+
+      if (
+        imported?.collector?.name !== "KOPKOP Device Information Collector" ||
+        !imported?.device
+      ) {
+        throw new Error("This is not a valid KOPKOP Device Collector file.");
+      }
+
+      const device = imported.device || {};
+      const operatingSystem = imported.operating_system || {};
+      const hardware = imported.hardware || {};
+      const processor = hardware.processor || {};
+      const memory = hardware.memory || {};
+      const motherboard = hardware.motherboard || {};
+      const bios = hardware.bios || {};
+      const storage = hardware.storage || {};
+      const network = imported.network || {};
+      const security = imported.security || {};
+      const officeProducts = imported.software?.office_products || [];
+
+      const importedName =
+        String(device.computer_name || "").trim() ||
+        [device.manufacturer, device.model].filter(Boolean).join(" ").trim() ||
+        "Imported computer";
+
+      const matchedAsset = findExistingAssetForImport(imported);
+      let baseForm = assetForm;
+
+      if (matchedAsset) {
+        const updateExisting = window.confirm(
+          `This device already exists in the inventory.\n\n` +
+            `Asset Tag: ${matchedAsset.asset_tag}\n` +
+            `Device: ${matchedAsset.item_name}\n` +
+            `Serial Number: ${matchedAsset.serial_number || "Not recorded"}\n` +
+            `Computer Name: ${matchedAsset.hostname || "Not recorded"}\n\n` +
+            `Press OK to update the existing asset with the newly collected technical information.\n` +
+            `Press Cancel to stop the import.`
+        );
+
+        if (!updateExisting) {
+          return;
+        }
+
+        setEditingAssetId(matchedAsset.id);
+
+        baseForm = {
+          assetTag: matchedAsset.asset_tag,
+          itemName: matchedAsset.item_name,
+          category: matchedAsset.category,
+          brand: matchedAsset.brand || "",
+          model: matchedAsset.model || "",
+          serialNumber: matchedAsset.serial_number || "",
+          quantity: String(matchedAsset.quantity || 1),
+          condition: matchedAsset.condition || "Good",
+          status: matchedAsset.status || "In Store",
+          assignedTo: matchedAsset.assigned_to || "",
+          location: matchedAsset.location || "",
+          supplier: matchedAsset.supplier || "",
+          purchaseDate: matchedAsset.purchase_date || "",
+          warrantyExpiry: matchedAsset.warranty_expiry || "",
+          notes: matchedAsset.notes || "",
+          os: matchedAsset.os || "",
+          ram: matchedAsset.ram || "",
+          systemType: matchedAsset.system_type || "",
+          connectionType: matchedAsset.connection_type || "",
+          msOffice: matchedAsset.ms_office || "",
+          monitor: matchedAsset.monitor || "",
+          keyboard: matchedAsset.keyboard || "",
+          mouse: matchedAsset.mouse || "",
+          charger: matchedAsset.charger || "",
+          headset: matchedAsset.headset || "",
+          storage: matchedAsset.storage || "",
+          processor: matchedAsset.processor || "",
+          gpu: matchedAsset.gpu || "",
+          motherboard: matchedAsset.motherboard || "",
+          biosVersion: matchedAsset.bios_version || "",
+          biosDate: matchedAsset.bios_date || "",
+          tpmStatus: matchedAsset.tpm_status || "",
+          hostname: matchedAsset.hostname || "",
+          ipAddress: matchedAsset.ip_address || "",
+          macAddress: matchedAsset.mac_address || "",
+          photoFrontUrl: matchedAsset.photo_front_url || "",
+          photoBackUrl: matchedAsset.photo_back_url || "",
+          photoLabelUrl: matchedAsset.photo_label_url || "",
+          onlineStatus: matchedAsset.online_status || "",
+          windowsUpdate: matchedAsset.windows_update || "",
+          desktopLoadingSpeed: matchedAsset.desktop_loading_speed || "",
+          bootingSpeed: matchedAsset.booting_speed || "",
+          performance: matchedAsset.performance || "",
+        };
+      }
+
+      const importedForm: AssetFormState = {
+        ...baseForm,
+        assetTag: baseForm.assetTag,
+        assignedTo: baseForm.assignedTo,
+        location: baseForm.location,
+        supplier: baseForm.supplier,
+        purchaseDate: baseForm.purchaseDate,
+        warrantyExpiry: baseForm.warrantyExpiry,
+        condition: baseForm.condition,
+        status: baseForm.status,
+        quantity: baseForm.quantity || "1",
+        category: baseForm.category || "Desktop",
+        itemName: matchedAsset
+          ? baseForm.itemName
+          : baseForm.itemName.trim() || importedName,
+        brand: String(device.manufacturer || "").trim(),
+        model: String(device.model || "").trim(),
+        serialNumber: String(device.serial_number || "").trim(),
+        os: [
+          operatingSystem.caption,
+          operatingSystem.architecture,
+          operatingSystem.build_number
+            ? `Build ${operatingSystem.build_number}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" - "),
+        ram:
+          memory.total_ram_gb != null
+            ? `${memory.total_ram_gb} GB`
+            : baseForm.ram,
+        systemType: String(
+          device.system_type || operatingSystem.architecture || ""
+        ).trim(),
+        connectionType: String(
+          network.interface || network.adapter_name || ""
+        ).trim(),
+        msOffice: formatImportedOfficeStatus(officeProducts),
+        storage: formatImportedStorage(storage.physical_disks),
+        processor: String(processor.name || "").trim(),
+        motherboard: [
+          motherboard.manufacturer,
+          motherboard.product,
+          motherboard.version,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        biosVersion: String(bios.version || "").trim(),
+        biosDate: String(bios.release_date || "").trim(),
+        tpmStatus: formatImportedTpmStatus(security),
+        hostname: String(device.computer_name || "").trim(),
+        ipAddress: String(network.ipv4_address || "").trim(),
+        macAddress: String(network.mac_address || "").trim(),
+      };
+
+      setAssetForm(importedForm);
+      setLastImportedDevice(importedName);
+
+      alert(
+        matchedAsset
+          ? `Existing asset ${matchedAsset.asset_tag} is ready to update. Review the imported technical information, then click Update Asset.`
+          : `Device information imported successfully for ${importedName}. Enter the Asset Tag and Location before saving.`
+      );
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "The device information file could not be imported.");
+    } finally {
+      setImportingDeviceInfo(false);
+    }
+  }
+
   function resetAssetForm() {
     setEditingAssetId(null);
     setAssetForm(EMPTY_ASSET_FORM);
+    setLastImportedDevice(null);
   }
 
   async function handleSaveAsset(e: React.FormEvent) {
@@ -4899,13 +5200,13 @@ async function loadComponentHistory() {
       <div className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-7">
         <header className="overflow-hidden rounded-[30px] border border-slate-800/40 bg-[#071525] text-white shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
           <div className="grid lg:grid-cols-[1fr_auto]">
-            <div className="relative overflow-hidden p-5 sm:p-8">
+            <div className="relative overflow-hidden p-6 sm:p-8">
               <div className="absolute -left-20 -top-24 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
               <div className="absolute bottom-0 right-0 h-48 w-48 rounded-full bg-emerald-400/10 blur-3xl" />
               <div className="relative">
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/10 shadow-inner sm:h-14 sm:w-14">
-                    <img src="/kopkop-logo.png" alt="Kopkop College" className="h-9 w-9 object-contain sm:h-11 sm:w-11" />
+                <div className="flex items-center gap-4">
+                  <div className="grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/10 shadow-inner">
+                    <img src="/kopkop-logo.png" alt="Kopkop College" className="h-11 w-11 object-contain" />
                   </div>
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-300">KOPKOP College</p>
@@ -4913,56 +5214,44 @@ async function loadComponentHistory() {
                   </div>
                 </div>
 
-                <div className="mt-5 max-w-3xl sm:mt-7">
+                <div className="mt-7 max-w-3xl">
                   <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                     <span className="h-2 w-2 rounded-full bg-emerald-400" />
                     Production System · Version 3.0
                   </div>
-                  <h1 className="mt-3 text-[2rem] font-black leading-[1.08] sm:mt-4 sm:text-5xl">
-                    <span className="sm:hidden">
-                      Executive ICT Asset
-                      <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
-                        Management Dashboard
-                      </span>
-                    </span>
-                    <span className="hidden sm:inline">
-                      Executive ICT Asset
-                      <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
-                        Management Dashboard
-                      </span>
+                  <h1 className="mt-4 text-3xl font-black leading-tight sm:text-5xl">
+                    Executive ICT Asset
+                    <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
+                      Management Dashboard
                     </span>
                   </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-5 text-slate-300 sm:mt-4 sm:text-base sm:leading-6">
+                  <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
                     Live visibility across device health, maintenance, audits, asset distribution, QR operations and management reporting.
                   </p>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2 text-xs sm:mt-6">
-                  <span className="hidden sm:inline-flex">
-                    <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="border border-white/10 bg-white/10 text-white" />
-                  </span>
-                  <Badge text={`${stats.total} assets`} className="border border-white/10 bg-white/10 text-white" />
-                  <Badge text={`${stats.avgScore}% health`} className="border border-white/10 bg-white/10 text-white" />
-                  <span className="hidden sm:inline-flex">
-                    <Badge text={`Role: ${role || "staff"}`} className="border border-white/10 bg-white/10 text-white" />
-                  </span>
+                <div className="mt-6 flex flex-wrap gap-2 text-xs">
+                  <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="border border-white/10 bg-white/10 text-white" />
+                  <Badge text={`${stats.total} registered assets`} className="border border-white/10 bg-white/10 text-white" />
+                  <Badge text={`${stats.avgScore}% average health`} className="border border-white/10 bg-white/10 text-white" />
+                  <Badge text={`Role: ${role || "staff"}`} className="border border-white/10 bg-white/10 text-white" />
                 </div>
               </div>
             </div>
 
-            <div className="border-t border-white/10 bg-white/[0.035] p-4 sm:p-5 lg:w-[390px] lg:border-l lg:border-t-0">
+            <div className="border-t border-white/10 bg-white/[0.035] p-5 lg:w-[390px] lg:border-l lg:border-t-0">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Management actions</p>
-              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:mt-4 sm:gap-3">
-                <button type="button" onClick={exportSummaryPdf} className="min-h-[86px] rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/15">
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button type="button" onClick={exportSummaryPdf} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/15">
                   <span className="mb-2 block text-xl">📊</span>Summary PDF
                 </button>
-                <button type="button" onClick={exportInventoryPdf} className="min-h-[86px] rounded-2xl bg-emerald-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-emerald-400">
+                <button type="button" onClick={exportInventoryPdf} className="rounded-2xl bg-emerald-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-emerald-400">
                   <span className="mb-2 block text-xl">📦</span>Inventory PDF
                 </button>
-                <button type="button" onClick={exportAlertsPdf} className="min-h-[86px] rounded-2xl bg-rose-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-rose-400">
+                <button type="button" onClick={exportAlertsPdf} className="rounded-2xl bg-rose-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-rose-400">
                   <span className="mb-2 block text-xl">🚨</span>Alerts PDF
                 </button>
-                <button type="button" onClick={() => refreshAll(true)} className="min-h-[86px] rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-left text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/15">
+                <button type="button" onClick={() => refreshAll(true)} className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-left text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/15">
                   <span className="mb-2 block text-xl">↻</span>{refreshing ? "Refreshing" : "Refresh Data"}
                 </button>
               </div>
@@ -5000,11 +5289,11 @@ async function loadComponentHistory() {
           ))}
         </div>
 
-        <div className="mt-4 grid gap-3 md:hidden">
+        <div className="mt-5 grid gap-3 md:hidden">
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">Mobile Technician Mode</p>
             <h2 className="mt-1 text-xl font-black text-slate-900">Quick field actions</h2>
-            <div className="mt-3 grid grid-cols-2 gap-2.5 sm:mt-4 sm:gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <button type="button" onClick={() => openMobileTab("scan")} className="rounded-2xl bg-cyan-700 px-4 py-4 text-left text-sm font-bold text-white">
                 <span className="block text-2xl">📷</span>Scan Device
               </button>
@@ -5023,7 +5312,7 @@ async function loadComponentHistory() {
 
         {activeTab === "dashboard" && (
           <div id="tab-dashboard" className="scroll-mt-24">
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-4 xl:grid-cols-6">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
               {[
                 { label: "Total Assets", value: stats.total, hint: "Registered ICT equipment", icon: "▦", tone: "from-blue-500 to-cyan-500" },
                 { label: "Average Health", value: `${stats.avgScore}%`, hint: "Across all devices", icon: "◉", tone: "from-emerald-500 to-teal-500" },
@@ -5032,18 +5321,18 @@ async function loadComponentHistory() {
                 { label: "In Use", value: stats.inUse, hint: "Currently active or assigned", icon: "✓", tone: "from-violet-500 to-indigo-500" },
                 { label: "Critical", value: stats.critical, hint: "Health below 40%", icon: "⚠", tone: "from-red-600 to-rose-500" },
               ].map((card) => (
-                <div key={card.label} className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-xl sm:p-5">
+                <div key={card.label} className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
                   <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.tone}`} />
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{card.label}</p>
-                      <p className="mt-2 text-3xl font-black text-slate-950 sm:mt-3">{card.value}</p>
+                      <p className="mt-3 text-3xl font-black text-slate-950">{card.value}</p>
                     </div>
                     <div className={`grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br ${card.tone} text-lg font-black text-white shadow-lg`}>
                       {card.icon}
                     </div>
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-slate-500 sm:mt-4">{card.hint}</p>
+                  <p className="mt-4 text-xs leading-5 text-slate-500">{card.hint}</p>
                 </div>
               ))}
             </div>
@@ -6267,6 +6556,54 @@ async function loadComponentHistory() {
                 />
 
                 <form onSubmit={handleSaveAsset} className="space-y-5">
+                  <section className="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50">
+                    <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">
+                          Automatic device discovery
+                        </p>
+                        <h3 className="mt-1 text-lg font-black text-slate-950">
+                          Import computer information
+                        </h3>
+                        <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                          Select the JSON file created by the KOPKOP Device Information Collector.
+                          The system will fill the computer specifications automatically.
+                        </p>
+                        {lastImportedDevice ? (
+                          <p className="mt-2 text-xs font-bold text-emerald-700">
+                            ✓ Imported: {lastImportedDevice}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <label
+                        className={`inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl px-5 py-3 text-sm font-black text-white shadow-sm transition ${
+                          importingDeviceInfo
+                            ? "cursor-wait bg-slate-400"
+                            : "bg-cyan-700 hover:bg-cyan-600"
+                        }`}
+                      >
+                        {importingDeviceInfo ? "Importing…" : "📥 Import Device JSON"}
+                        <input
+                          type="file"
+                          accept=".json,application/json"
+                          className="hidden"
+                          disabled={importingDeviceInfo}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) void handleDeviceInfoImport(file);
+                            event.currentTarget.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="border-t border-cyan-200/70 bg-white/60 px-4 py-3 text-xs leading-5 text-slate-600">
+                      After importing, manually enter the Asset Tag, Location, Assigned To,
+                      condition, purchase details and photographs. Review all imported values before saving.
+                    </div>
+                  </section>
+
                   <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-4">
                       <h3 className="font-bold text-slate-900">Basic Asset Information</h3>
