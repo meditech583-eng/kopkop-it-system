@@ -23,7 +23,12 @@ function getServerSupabase() {
 function safeText(value: unknown, maxLength = 500) {
   return String(value ?? "").trim().slice(0, maxLength);
 }
-
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    message: "KOPKOP Device Discovery API is online.",
+  });
+}
 export async function POST(request: NextRequest) {
   try {
     const expectedKey = process.env.COLLECTOR_API_KEY;
