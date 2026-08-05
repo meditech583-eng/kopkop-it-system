@@ -1823,16 +1823,42 @@ async function loadComponentHistory() {
   }, [enrichedAssets]);
 
   const departmentGraphData = useMemo(() => {
-    return Object.entries(
-      enrichedAssets.reduce((acc, asset) => {
-        const key = asset.location || "Unassigned";
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>)
-    )
-      .map(([label, value]) => ({ label, value }))
+    const locationLabels = new Map<string, string>();
+
+    const totals = enrichedAssets.reduce((acc, asset) => {
+      const rawLocation = (asset.location || "Unassigned")
+        .trim()
+        .replace(/\s+/g, " ");
+
+      const normalizedLocation = rawLocation.toLowerCase();
+
+      if (!locationLabels.has(normalizedLocation)) {
+        locationLabels.set(
+          normalizedLocation,
+          rawLocation === "Unassigned"
+            ? "Unassigned"
+            : rawLocation
+                .split(" ")
+                .map((word) =>
+                  word.length > 0
+                    ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+                    : word
+                )
+                .join(" ")
+        );
+      }
+
+      acc[normalizedLocation] = (acc[normalizedLocation] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return Object.entries(totals)
+      .map(([normalizedLocation, value]) => ({
+        label: locationLabels.get(normalizedLocation) || "Unassigned",
+        value,
+      }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
+      .slice(0, 12);
   }, [enrichedAssets]);
 
   const categoryGraphData = useMemo(() => {
