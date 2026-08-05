@@ -1024,7 +1024,7 @@ function DonutRing({
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
         <div className="grid h-20 w-20 place-items-center rounded-full" style={{ background }}>
           <div className="grid h-12 w-12 place-items-center rounded-full bg-white text-sm font-bold text-slate-900">
             {percent}%
@@ -4899,13 +4899,13 @@ async function loadComponentHistory() {
       <div className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-7">
         <header className="overflow-hidden rounded-[30px] border border-slate-800/40 bg-[#071525] text-white shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
           <div className="grid lg:grid-cols-[1fr_auto]">
-            <div className="relative overflow-hidden p-6 sm:p-8">
+            <div className="relative overflow-hidden p-5 sm:p-8">
               <div className="absolute -left-20 -top-24 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
               <div className="absolute bottom-0 right-0 h-48 w-48 rounded-full bg-emerald-400/10 blur-3xl" />
               <div className="relative">
-                <div className="flex items-center gap-4">
-                  <div className="grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/10 shadow-inner">
-                    <img src="/kopkop-logo.png" alt="Kopkop College" className="h-11 w-11 object-contain" />
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/10 shadow-inner sm:h-14 sm:w-14">
+                    <img src="/kopkop-logo.png" alt="Kopkop College" className="h-9 w-9 object-contain sm:h-11 sm:w-11" />
                   </div>
                   <div>
                     <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-300">KOPKOP College</p>
@@ -4913,44 +4913,56 @@ async function loadComponentHistory() {
                   </div>
                 </div>
 
-                <div className="mt-7 max-w-3xl">
+                <div className="mt-5 max-w-3xl sm:mt-7">
                   <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                     <span className="h-2 w-2 rounded-full bg-emerald-400" />
                     Production System · Version 3.0
                   </div>
-                  <h1 className="mt-4 text-3xl font-black leading-tight sm:text-5xl">
-                    Executive ICT Asset
-                    <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
-                      Management Dashboard
+                  <h1 className="mt-3 text-[2rem] font-black leading-[1.08] sm:mt-4 sm:text-5xl">
+                    <span className="sm:hidden">
+                      Executive ICT Asset
+                      <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
+                        Management Dashboard
+                      </span>
+                    </span>
+                    <span className="hidden sm:inline">
+                      Executive ICT Asset
+                      <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
+                        Management Dashboard
+                      </span>
                     </span>
                   </h1>
-                  <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+                  <p className="mt-3 max-w-2xl text-sm leading-5 text-slate-300 sm:mt-4 sm:text-base sm:leading-6">
                     Live visibility across device health, maintenance, audits, asset distribution, QR operations and management reporting.
                   </p>
                 </div>
 
-                <div className="mt-6 flex flex-wrap gap-2 text-xs">
-                  <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="border border-white/10 bg-white/10 text-white" />
-                  <Badge text={`${stats.total} registered assets`} className="border border-white/10 bg-white/10 text-white" />
-                  <Badge text={`${stats.avgScore}% average health`} className="border border-white/10 bg-white/10 text-white" />
-                  <Badge text={`Role: ${role || "staff"}`} className="border border-white/10 bg-white/10 text-white" />
+                <div className="mt-4 flex flex-wrap gap-2 text-xs sm:mt-6">
+                  <span className="hidden sm:inline-flex">
+                    <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="border border-white/10 bg-white/10 text-white" />
+                  </span>
+                  <Badge text={`${stats.total} assets`} className="border border-white/10 bg-white/10 text-white" />
+                  <Badge text={`${stats.avgScore}% health`} className="border border-white/10 bg-white/10 text-white" />
+                  <span className="hidden sm:inline-flex">
+                    <Badge text={`Role: ${role || "staff"}`} className="border border-white/10 bg-white/10 text-white" />
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="border-t border-white/10 bg-white/[0.035] p-5 lg:w-[390px] lg:border-l lg:border-t-0">
+            <div className="border-t border-white/10 bg-white/[0.035] p-4 sm:p-5 lg:w-[390px] lg:border-l lg:border-t-0">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Management actions</p>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <button type="button" onClick={exportSummaryPdf} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/15">
+              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:mt-4 sm:gap-3">
+                <button type="button" onClick={exportSummaryPdf} className="min-h-[86px] rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/15">
                   <span className="mb-2 block text-xl">📊</span>Summary PDF
                 </button>
-                <button type="button" onClick={exportInventoryPdf} className="rounded-2xl bg-emerald-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-emerald-400">
+                <button type="button" onClick={exportInventoryPdf} className="min-h-[86px] rounded-2xl bg-emerald-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-emerald-400">
                   <span className="mb-2 block text-xl">📦</span>Inventory PDF
                 </button>
-                <button type="button" onClick={exportAlertsPdf} className="rounded-2xl bg-rose-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-rose-400">
+                <button type="button" onClick={exportAlertsPdf} className="min-h-[86px] rounded-2xl bg-rose-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-rose-400">
                   <span className="mb-2 block text-xl">🚨</span>Alerts PDF
                 </button>
-                <button type="button" onClick={() => refreshAll(true)} className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-left text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/15">
+                <button type="button" onClick={() => refreshAll(true)} className="min-h-[86px] rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-left text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/15">
                   <span className="mb-2 block text-xl">↻</span>{refreshing ? "Refreshing" : "Refresh Data"}
                 </button>
               </div>
@@ -4988,11 +5000,11 @@ async function loadComponentHistory() {
           ))}
         </div>
 
-        <div className="mt-5 grid gap-3 md:hidden">
+        <div className="mt-4 grid gap-3 md:hidden">
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">Mobile Technician Mode</p>
             <h2 className="mt-1 text-xl font-black text-slate-900">Quick field actions</h2>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-2.5 sm:mt-4 sm:gap-3">
               <button type="button" onClick={() => openMobileTab("scan")} className="rounded-2xl bg-cyan-700 px-4 py-4 text-left text-sm font-bold text-white">
                 <span className="block text-2xl">📷</span>Scan Device
               </button>
@@ -5011,7 +5023,7 @@ async function loadComponentHistory() {
 
         {activeTab === "dashboard" && (
           <div id="tab-dashboard" className="scroll-mt-24">
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:mt-6 sm:grid-cols-2 sm:gap-4 xl:grid-cols-6">
               {[
                 { label: "Total Assets", value: stats.total, hint: "Registered ICT equipment", icon: "▦", tone: "from-blue-500 to-cyan-500" },
                 { label: "Average Health", value: `${stats.avgScore}%`, hint: "Across all devices", icon: "◉", tone: "from-emerald-500 to-teal-500" },
@@ -5020,18 +5032,18 @@ async function loadComponentHistory() {
                 { label: "In Use", value: stats.inUse, hint: "Currently active or assigned", icon: "✓", tone: "from-violet-500 to-indigo-500" },
                 { label: "Critical", value: stats.critical, hint: "Health below 40%", icon: "⚠", tone: "from-red-600 to-rose-500" },
               ].map((card) => (
-                <div key={card.label} className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
+                <div key={card.label} className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-xl sm:p-5">
                   <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.tone}`} />
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{card.label}</p>
-                      <p className="mt-3 text-3xl font-black text-slate-950">{card.value}</p>
+                      <p className="mt-2 text-3xl font-black text-slate-950 sm:mt-3">{card.value}</p>
                     </div>
                     <div className={`grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br ${card.tone} text-lg font-black text-white shadow-lg`}>
                       {card.icon}
                     </div>
                   </div>
-                  <p className="mt-4 text-xs leading-5 text-slate-500">{card.hint}</p>
+                  <p className="mt-3 text-xs leading-5 text-slate-500 sm:mt-4">{card.hint}</p>
                 </div>
               ))}
             </div>
