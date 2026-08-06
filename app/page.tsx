@@ -996,7 +996,7 @@ function MiniBar({
   label: string;
   value: number;
   max: number;
-  tone?: "emerald" | "amber" | "orange" | "red" | "blue" | "slate";
+  tone?: "emerald" | "amber" | "orange" | "red" | "blue" | "violet" | "slate";
 }) {
   const width = max > 0 ? Math.max(8, Math.round((value / max) * 100)) : 0;
   const toneMap: Record<string, string> = {
@@ -1005,6 +1005,7 @@ function MiniBar({
     orange: "bg-orange-500",
     red: "bg-red-500",
     blue: "bg-blue-500",
+    violet: "bg-violet-500",
     slate: "bg-slate-700",
   };
 
@@ -2085,6 +2086,20 @@ async function loadComponentHistory() {
     return deviceChecks.filter((check) => check.asset_id === selectedAsset.id);
   }, [deviceChecks, selectedAsset]);
 
+  const selectedAssetScans = useMemo(() => {
+    if (!selectedAsset) return [];
+    return scanHistory
+      .filter((scan) => scan.asset_id === selectedAsset.id)
+      .sort((a, b) => new Date(b.scanned_at).getTime() - new Date(a.scanned_at).getTime());
+  }, [scanHistory, selectedAsset]);
+
+  const selectedAssetChanges = useMemo(() => {
+    if (!selectedAsset) return [];
+    return hardwareChanges
+      .filter((change) => change.asset_id === selectedAsset.id)
+      .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
+  }, [hardwareChanges, selectedAsset]);
+
   const selectedAssetMaintenance = useMemo(() => {
     if (!selectedAsset) return [];
     return maintenanceRecords.filter((record) => record.asset_id === selectedAsset.id);
@@ -2229,6 +2244,139 @@ async function loadComponentHistory() {
       changesToday,
     };
   }, [enrichedAssets, hardwareChanges]);
+
+  const fleetIntelligence = useMemo(() => {
+    const now = Date.now();
+
+    const computerAssets = enrichedAssets.filter((asset) => {
+      const category = String(asset.category || "").trim().toLowerCase();
+      return (
+        category.includes("desktop") ||
+        category.includes("laptop") ||
+        category.includes("server") ||
+        category.includes("workstation") ||
+        category.includes("computer")
+      );
+    });
+
+    const otherAssets = enrichedAssets.filter(
+      (asset) => !computerAssets.some((computer) => computer.id === asset.id)
+    );
+
+    let onlineNow = 0;
+    let recentlySeen = 0;
+    let offline = 0;
+    let scannedComputers = 0;
+    let windows11 = 0;
+    let windows10 = 0;
+    let windowsOther = 0;
+    let ssd = 0;
+    let hdd = 0;
+    let storageUnknown = 0;
+    let lowRam = 0;
+    let tpmReady = 0;
+    let tpmAttention = 0;
+    let tpmUnknown = 0;
+
+    computerAssets.forEach((asset) => {
+      if (asset.last_seen_at) {
+        scannedComputers += 1;
+
+        const ageMinutes =
+          (now - new Date(asset.last_seen_at).getTime()) / (1000 * 60);
+
+        if (ageMinutes <= 15) onlineNow += 1;
+        else if (ageMinutes <= 24 * 60) recentlySeen += 1;
+        else offline += 1;
+      }
+
+      const os = String(asset.os || "").toLowerCase();
+      if (os.includes("windows 11")) windows11 += 1;
+      else if (os.includes("windows 10")) windows10 += 1;
+      else windowsOther += 1;
+
+      const storage = String(asset.storage || "").toLowerCase();
+      if (storage.includes("ssd") || storage.includes("nvme")) ssd += 1;
+      else if (storage.includes("hdd") || storage.includes("hard disk")) hdd += 1;
+      else storageUnknown += 1;
+
+      const ramMatch = String(asset.ram || "").match(/([0-9]+(?:\.[0-9]+)?)/);
+      const ramGb = ramMatch ? Number(ramMatch[1]) : null;
+      if (ramGb !== null && ramGb < 8) lowRam += 1;
+
+      const tpm = String(asset.tpm_status || "").toLowerCase();
+      if (tpm.includes("ready") || tpm.includes("enabled")) tpmReady += 1;
+      else if (tpm && !tpm.includes("not detected")) tpmAttention += 1;
+      else tpmUnknown += 1;
+    });
+
+    const unscannedComputers = Math.max(
+      computerAssets.length - scannedComputers,
+      0
+    );
+
+    const coveragePercent =
+      computerAssets.length > 0
+        ? Math.round((scannedComputers / computerAssets.length) * 100)
+        : 0;
+
+    const recommendations = [
+      {
+        label: "Computers not yet scanned",
+        value: unscannedComputers,
+        message:
+          "Run the collector on these Windows computers to complete live fleet coverage.",
+      },
+      {
+        label: "Offline over 24 hours",
+        value: offline,
+        message:
+          "Confirm whether these computers are powered off, moved or unavailable.",
+      },
+      {
+        label: "RAM below 8 GB",
+        value: lowRam,
+        message:
+          "Review these computers for memory upgrade planning.",
+      },
+      {
+        label: "HDD storage detected",
+        value: hdd,
+        message:
+          "Consider SSD upgrades where performance is slow.",
+      },
+    ].filter((item) => item.value > 0);
+
+    const recentComputerScans = scanHistory
+      .filter((scan) =>
+        computerAssets.some((asset) => asset.id === scan.asset_id)
+      )
+      .slice(0, 6);
+
+    return {
+      totalAssets: enrichedAssets.length,
+      computerAssets: computerAssets.length,
+      otherAssets: otherAssets.length,
+      scannedComputers,
+      unscannedComputers,
+      coveragePercent,
+      onlineNow,
+      recentlySeen,
+      offline,
+      windows11,
+      windows10,
+      windowsOther,
+      ssd,
+      hdd,
+      storageUnknown,
+      lowRam,
+      tpmReady,
+      tpmAttention,
+      tpmUnknown,
+      recommendations,
+      recentComputerScans,
+    };
+  }, [enrichedAssets, scanHistory]);
 
   const healthBreakdown = useMemo(() => {
     return {
@@ -6123,6 +6271,333 @@ async function loadComponentHistory() {
                 </div>
               </section>
             </div>
+
+            <div className="mt-6 space-y-6">
+              <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+                <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-700">
+                        Live Fleet Intelligence V6
+                      </p>
+                      <h2 className="mt-1 text-2xl font-black text-slate-950">
+                        Collector coverage and platform overview
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Computer totals are separated from projectors, printers and other ICT assets.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("discovery")}
+                      className="rounded-2xl bg-violet-700 px-5 py-3 text-sm font-black text-white"
+                    >
+                      Open Discovery Center
+                    </button>
+                  </div>
+
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      [
+                        "Total ICT assets",
+                        fleetIntelligence.totalAssets,
+                        "All registered equipment",
+                        "border-slate-200 bg-slate-50 text-slate-800",
+                      ],
+                      [
+                        "Computers",
+                        fleetIntelligence.computerAssets,
+                        "Desktops, laptops and servers",
+                        "border-blue-200 bg-blue-50 text-blue-800",
+                      ],
+                      [
+                        "Other ICT devices",
+                        fleetIntelligence.otherAssets,
+                        "Projectors, printers, network and CCTV",
+                        "border-cyan-200 bg-cyan-50 text-cyan-800",
+                      ],
+                      [
+                        "Collector coverage",
+                        `${fleetIntelligence.coveragePercent}%`,
+                        `${fleetIntelligence.scannedComputers} of ${fleetIntelligence.computerAssets} computers scanned`,
+                        "border-violet-200 bg-violet-50 text-violet-800",
+                      ],
+                    ].map(([label, value, hint, className]) => (
+                      <div
+                        key={String(label)}
+                        className={`rounded-3xl border p-5 ${className}`}
+                      >
+                        <p className="text-xs font-black uppercase tracking-[0.14em]">
+                          {label}
+                        </p>
+                        <p className="mt-3 text-3xl font-black">{value}</p>
+                        <p className="mt-2 text-xs opacity-80">{hint}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 rounded-3xl border border-violet-200 bg-violet-50 p-5">
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-black text-violet-950">
+                          Collector deployment progress
+                        </p>
+                        <p className="mt-1 text-xs text-violet-700">
+                          {fleetIntelligence.scannedComputers} scanned ·{" "}
+                          {fleetIntelligence.unscannedComputers} remaining
+                        </p>
+                      </div>
+                      <p className="text-3xl font-black text-violet-800">
+                        {fleetIntelligence.coveragePercent}%
+                      </p>
+                    </div>
+                    <div className="mt-4 h-4 overflow-hidden rounded-full bg-white">
+                      <div
+                        className="h-full rounded-full bg-violet-600 transition-all"
+                        style={{
+                          width: `${Math.max(
+                            0,
+                            Math.min(100, fleetIntelligence.coveragePercent)
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      [
+                        "Online now",
+                        fleetIntelligence.onlineNow,
+                        "Seen within 15 minutes",
+                        "border-emerald-200 bg-emerald-50 text-emerald-800",
+                      ],
+                      [
+                        "Recently seen",
+                        fleetIntelligence.recentlySeen,
+                        "Seen within 24 hours",
+                        "border-cyan-200 bg-cyan-50 text-cyan-800",
+                      ],
+                      [
+                        "Offline",
+                        fleetIntelligence.offline,
+                        "Last seen over 24 hours ago",
+                        "border-red-200 bg-red-50 text-red-800",
+                      ],
+                      [
+                        "Not yet scanned",
+                        fleetIntelligence.unscannedComputers,
+                        "Computers without collector data",
+                        "border-amber-200 bg-amber-50 text-amber-800",
+                      ],
+                    ].map(([label, value, hint, className]) => (
+                      <div
+                        key={String(label)}
+                        className={`rounded-3xl border p-5 ${className}`}
+                      >
+                        <p className="text-xs font-black uppercase tracking-[0.14em]">
+                          {label}
+                        </p>
+                        <p className="mt-3 text-3xl font-black">{value}</p>
+                        <p className="mt-2 text-xs opacity-80">{hint}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 grid gap-4 lg:grid-cols-3">
+                    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                      <p className="text-sm font-black text-slate-900">
+                        Windows computers
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Total: {fleetIntelligence.computerAssets}
+                      </p>
+                      <div className="mt-4 space-y-4">
+                        <MiniBar
+                          label="Windows 11"
+                          value={fleetIntelligence.windows11}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="blue"
+                        />
+                        <MiniBar
+                          label="Windows 10"
+                          value={fleetIntelligence.windows10}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="amber"
+                        />
+                        <MiniBar
+                          label="Other / OS not recorded"
+                          value={fleetIntelligence.windowsOther}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="slate"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                      <p className="text-sm font-black text-slate-900">
+                        Storage information
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Collector data will improve these figures.
+                      </p>
+                      <div className="mt-4 space-y-4">
+                        <MiniBar
+                          label="SSD / NVMe"
+                          value={fleetIntelligence.ssd}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="emerald"
+                        />
+                        <MiniBar
+                          label="HDD"
+                          value={fleetIntelligence.hdd}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="red"
+                        />
+                        <MiniBar
+                          label="Not yet recorded"
+                          value={fleetIntelligence.storageUnknown}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="slate"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                      <p className="text-sm font-black text-slate-900">
+                        Security readiness
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        TPM information from collector scans.
+                      </p>
+                      <div className="mt-4 space-y-4">
+                        <MiniBar
+                          label="TPM ready"
+                          value={fleetIntelligence.tpmReady}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="violet"
+                        />
+                        <MiniBar
+                          label="TPM attention"
+                          value={fleetIntelligence.tpmAttention}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="amber"
+                        />
+                        <MiniBar
+                          label="Not yet recorded"
+                          value={fleetIntelligence.tpmUnknown}
+                          max={Math.max(fleetIntelligence.computerAssets, 1)}
+                          tone="slate"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <aside className="rounded-[28px] border border-slate-200/80 bg-[#0b1f33] p-5 text-white shadow-sm">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-300">
+                    Intelligence recommendations
+                  </p>
+                  <h2 className="mt-1 text-xl font-black">Priority follow-up</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Recommendations now apply only to registered computers.
+                  </p>
+
+                  <div className="mt-5 space-y-3">
+                    {fleetIntelligence.recommendations.length ? (
+                      fleetIntelligence.recommendations.map((item) => (
+                        <div
+                          key={item.label}
+                          className="rounded-2xl bg-white/10 p-4"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-black">{item.label}</p>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">
+                              {item.value}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-slate-300">
+                            {item.message}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-2xl bg-emerald-500/20 p-4">
+                        <p className="font-black text-emerald-200">
+                          No fleet priorities detected
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-emerald-100">
+                          Current scanned-computer standards do not require
+                          immediate follow-up.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </aside>
+              </div>
+
+              <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">
+                      Recent collector activity
+                    </p>
+                    <h2 className="mt-1 text-xl font-black text-slate-950">
+                      Latest computer check-ins
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    These records update whenever the collector runs.
+                  </p>
+                </div>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {fleetIntelligence.recentComputerScans.length ? (
+                    fleetIntelligence.recentComputerScans.map((scan) => {
+                      const asset = enrichedAssets.find(
+                        (item) => item.id === scan.asset_id
+                      );
+
+                      return (
+                        <div
+                          key={scan.id}
+                          className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-black text-slate-950">
+                                {asset?.asset_tag ||
+                                  scan.hostname ||
+                                  "Unknown computer"}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-600">
+                                {scan.hostname ||
+                                  asset?.item_name ||
+                                  "Computer check-in"}
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-emerald-200 px-3 py-1 text-xs font-black text-emerald-800">
+                              Seen
+                            </span>
+                          </div>
+                          <p className="mt-3 text-xs text-slate-500">
+                            IP: {scan.ip_address || "-"} · MAC:{" "}
+                            {scan.mac_address || "-"}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-400">
+                            {formatDateTime(scan.scanned_at)}
+                          </p>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+                      No collector check-ins have been recorded yet.
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
           </div>
         )}
 
@@ -7019,6 +7494,103 @@ async function loadComponentHistory() {
                           <p><span className="font-semibold text-slate-900">Alerts:</span> {selectedAsset.alerts.length ? selectedAsset.alerts.join(", ") : "No active alerts"}</p>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+
+                <div className="rounded-3xl bg-white p-5 shadow-sm">
+                  <SectionTitle
+                    title="Live device intelligence"
+                    subtitle="Collector check-ins and technical changes recorded for this computer."
+                  />
+
+                  <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+                    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                            Current connection
+                          </p>
+                          <p className="mt-2 text-2xl font-black text-slate-950">
+                            {liveOnlineStatus(selectedAsset)}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black ${
+                          liveOnlineStatus(selectedAsset) === "Online"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : liveOnlineStatus(selectedAsset) === "Recently Seen"
+                              ? "bg-cyan-100 text-cyan-700"
+                              : "bg-slate-200 text-slate-700"
+                        }`}>
+                          {liveOnlineStatus(selectedAsset)}
+                        </span>
+                      </div>
+
+                      <div className="mt-5 space-y-3 text-sm text-slate-700">
+                        <p><span className="font-black text-slate-950">Last seen:</span> {selectedAsset.last_seen_at ? formatDateTime(selectedAsset.last_seen_at) : "Never scanned"}</p>
+                        <p><span className="font-black text-slate-950">Recorded scans:</span> {selectedAssetScans.length}</p>
+                        <p><span className="font-black text-slate-950">Hardware changes:</span> {selectedAssetChanges.length}</p>
+                        <p><span className="font-black text-slate-950">Latest IP:</span> {selectedAsset.ip_address || "Not recorded"}</p>
+                        <p><span className="font-black text-slate-950">Latest MAC:</span> {selectedAsset.mac_address || "Not recorded"}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {[...selectedAssetScans.slice(0, 6), ...selectedAssetChanges.slice(0, 6)]
+                        .sort((a: any, b: any) => {
+                          const aDate = "scanned_at" in a ? a.scanned_at : a.changed_at;
+                          const bDate = "scanned_at" in b ? b.scanned_at : b.changed_at;
+                          return new Date(bDate).getTime() - new Date(aDate).getTime();
+                        })
+                        .slice(0, 10)
+                        .map((event: any) => {
+                          const isScan = "scanned_at" in event;
+                          return (
+                            <div key={`${isScan ? "scan" : "change"}-${event.id}`} className={`rounded-2xl border p-4 ${
+                              isScan ? "border-emerald-200 bg-emerald-50" : "border-violet-200 bg-violet-50"
+                            }`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-black text-slate-950">
+                                    {isScan ? "Device checked in" : `${event.field_name} changed`}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {formatDateTime(isScan ? event.scanned_at : event.changed_at)}
+                                  </p>
+                                </div>
+                                <span className={`rounded-full px-3 py-1 text-xs font-black ${
+                                  isScan ? "bg-emerald-200 text-emerald-800" : "bg-violet-200 text-violet-800"
+                                }`}>
+                                  {isScan ? "Check-in" : "Change"}
+                                </span>
+                              </div>
+
+                              {isScan ? (
+                                <p className="mt-3 text-sm text-slate-700">
+                                  IP: {event.ip_address || "-"} · MAC: {event.mac_address || "-"}
+                                </p>
+                              ) : (
+                                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                                  <div className="rounded-xl bg-white p-3">
+                                    <p className="font-bold text-slate-400">Previous</p>
+                                    <p className="mt-1 break-words text-slate-700">{event.old_value || "Not recorded"}</p>
+                                  </div>
+                                  <div className="rounded-xl bg-white p-3">
+                                    <p className="font-bold text-slate-400">Current</p>
+                                    <p className="mt-1 break-words text-slate-700">{event.new_value || "Not recorded"}</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                      {selectedAssetScans.length === 0 && selectedAssetChanges.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                          Run the collector on this computer to begin its live activity timeline.
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
