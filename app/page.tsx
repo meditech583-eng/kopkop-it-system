@@ -85,6 +85,8 @@ type ITAsset = {
   desktop_loading_speed: string | null;
   booting_speed: string | null;
   performance: string | null;
+  last_seen_at?: string | null;
+  last_scan_id?: number | null;
   created_at: string;
 };
 
@@ -527,6 +529,24 @@ function getWarrantyStatus(value?: string | null) {
   if (days < 0) return `Expired ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago`;
   if (days === 0) return "Expires today";
   return `Active - ${days} day${days === 1 ? "" : "s"} remaining`;
+}
+
+function liveOnlineStatus(asset: ITAsset) {
+  if (!asset.last_seen_at) {
+    return asset.online_status || "Unknown";
+  }
+
+  const lastSeenTime = new Date(asset.last_seen_at).getTime();
+
+  if (!Number.isFinite(lastSeenTime)) {
+    return asset.online_status || "Unknown";
+  }
+
+  const ageMinutes = (Date.now() - lastSeenTime) / (1000 * 60);
+
+  if (ageMinutes <= 15) return "Online";
+  if (ageMinutes <= 24 * 60) return "Recently Seen";
+  return "Offline";
 }
 
 function safeNumber(value: string) {
@@ -1257,6 +1277,43 @@ function QRLabelCard({ asset }: { asset: ITAsset }) {
   );
 }
 
+type DeviceScanHistory = {
+  id: number;
+  asset_id: number | null;
+  discovery_id: number | null;
+  hostname: string | null;
+  serial_number: string | null;
+  ip_address: string | null;
+  mac_address: string | null;
+  scanned_at: string;
+  scan_source: string | null;
+  snapshot: any;
+};
+
+type HardwareChangeRecord = {
+  id: number;
+  asset_id: number;
+  discovery_id: number | null;
+  field_name: string;
+  old_value: string | null;
+  new_value: string | null;
+  changed_at: string;
+};
+
+type DeviceDiscoveryRecord = {
+  id: number;
+  collector_version?: string | null;
+  hostname?: string | null;
+  serial_number?: string | null;
+  mac_address?: string | null;
+  payload: any;
+  status: "pending" | "imported" | "ignored" | "superseded" | string;
+  discovery_type?: "existing_asset" | "new_asset" | null;
+  matched_asset_id?: number | null;
+  received_at?: string | null;
+  imported_at?: string | null;
+};
+
 export default function KopkopCollegeICTAssetAuditComplianceSystem() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -1282,6 +1339,17 @@ const [deletingComponentId, setDeletingComponentId] =
   const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
   const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
   const [importingDeviceInfo, setImportingDeviceInfo] = useState(false);
+  const [checkingLiveDevice, setCheckingLiveDevice] = useState(false);
+  const [pendingLiveDevices, setPendingLiveDevices] = useState(0);
+  const [deviceDiscoveries, setDeviceDiscoveries] = useState<DeviceDiscoveryRecord[]>([]);
+  const [loadingDiscoveries, setLoadingDiscoveries] = useState(false);
+  const [processingDiscoveryId, setProcessingDiscoveryId] = useState<number | null>(null);
+  const [activeDiscoveryId, setActiveDiscoveryId] = useState<number | null>(null);
+  const [activeDiscoveryMode, setActiveDiscoveryMode] = useState<"create" | "update" | null>(null);
+  const [scanHistory, setScanHistory] = useState<DeviceScanHistory[]>([]);
+  const [hardwareChanges, setHardwareChanges] = useState<HardwareChangeRecord[]>([]);
+  const [autoUpdatingDiscoveryId, setAutoUpdatingDiscoveryId] = useState<number | null>(null);
+  const autoProcessedDiscoveryIds = useRef<Set<number>>(new Set());
   const [lastImportedDevice, setLastImportedDevice] = useState<string | null>(null);
   const [auditForm, setAuditForm] = useState<AuditFormState>(EMPTY_AUDIT_FORM);
   const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormState>(EMPTY_MAINTENANCE_FORM);
@@ -1296,7 +1364,7 @@ const [deletingComponentId, setDeletingComponentId] =
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [performanceFilter, setPerformanceFilter] = useState("All");
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "profile" | "scan" | "labels" | "maintenance" | "audit" | "history">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "profile" | "scan" | "discovery" | "labels" | "maintenance" | "audit" | "history">("dashboard");
   const [printMode, setPrintMode] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
@@ -1372,6 +1440,330 @@ const [deletingComponentId, setDeletingComponentId] =
   useEffect(() => {
     checkScannerSupport();
   }, []);
+
+  async function refreshLiveIntelligence() {
+    try {
+      const [{ data: scans, error: scanError }, { data: changes, error: changeError }] =
+        await Promise.all([
+          supabase
+            .from("device_scan_history")
+            .select("*")
+            .order("scanned_at", { ascending: false })
+            .limit(100),
+          supabase
+            .from("asset_hardware_changes")
+            .select("*")
+            .order("changed_at", { ascending: false })
+            .limit(100),
+        ]);
+
+      if (scanError) throw scanError;
+      if (changeError) throw changeError;
+
+      setScanHistory((scans || []) as DeviceScanHistory[]);
+      setHardwareChanges((changes || []) as HardwareChangeRecord[]);
+    } catch (error) {
+      console.error("Could not load live asset intelligence:", error);
+    }
+  }
+
+  function friendlyStorageFromDiscovery(payload: any) {
+    const disks = payload?.hardware?.storage?.physical_disks;
+    if (!Array.isArray(disks) || disks.length === 0) return "";
+
+    return disks
+      .map((disk: any) => {
+        const size = Number(disk?.size_gb);
+        const sizeText = Number.isFinite(size) ? `${Math.round(size)} GB` : "";
+        const search = `${disk?.model || ""} ${disk?.media_type || ""}`.toLowerCase();
+        const type =
+          search.includes("ssd") ||
+          search.includes("nvme") ||
+          search.includes("solid state") ||
+          search.includes("kbg")
+            ? "SSD"
+            : search.includes("hdd") ||
+                search.includes("hard disk") ||
+                search.includes("seagate") ||
+                search.includes("western digital")
+              ? "HDD"
+              : "Storage";
+        return [sizeText, type].filter(Boolean).join(" ");
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+
+  function collectedTechnicalValues(payload: any) {
+    const device = payload?.device || {};
+    const os = payload?.operating_system || {};
+    const hardware = payload?.hardware || {};
+    const memory = hardware?.memory || {};
+    const processor = hardware?.processor || {};
+    const motherboard = hardware?.motherboard || {};
+    const bios = hardware?.bios || {};
+    const network = payload?.network || {};
+    const security = payload?.security || {};
+
+    return {
+      brand: String(device.manufacturer || "").trim(),
+      model: String(device.model || "").trim(),
+      serial_number: String(device.serial_number || "").trim(),
+      os: [os.caption, os.architecture, os.build_number ? `Build ${os.build_number}` : ""]
+        .filter(Boolean)
+        .join(" - "),
+      ram: memory.total_ram_gb != null ? `${memory.total_ram_gb} GB` : "",
+      system_type: String(device.system_type || os.architecture || "").trim(),
+      connection_type: String(network.interface || network.adapter_name || "").trim(),
+      storage: friendlyStorageFromDiscovery(payload),
+      processor: String(processor.name || "").trim(),
+      motherboard: [motherboard.manufacturer, motherboard.product, motherboard.version]
+        .filter(Boolean)
+        .join(" "),
+      bios_version: String(bios.version || "").trim(),
+      bios_date: String(bios.release_date || "").trim(),
+      tpm_status:
+        security.tpm_present === false
+          ? "TPM not present"
+          : [
+              security.tpm_present === true ? "TPM present" : "",
+              security.tpm_ready === true ? "Ready" : "",
+              security.tpm_enabled === true ? "Enabled" : "",
+              security.tpm_version ? `Version ${security.tpm_version}` : "",
+            ]
+              .filter(Boolean)
+              .join(" - "),
+      hostname: String(device.computer_name || "").trim(),
+      ip_address: String(network.ipv4_address || "").trim(),
+      mac_address: String(network.mac_address || "").trim(),
+    };
+  }
+
+  function findAssetForDiscovery(record: DeviceDiscoveryRecord) {
+    if (record.matched_asset_id) {
+      const direct = assets.find((asset) => asset.id === record.matched_asset_id);
+      if (direct) return direct;
+    }
+
+    const payload = record.payload || {};
+    const serial = String(record.serial_number || payload?.device?.serial_number || "")
+      .trim()
+      .toLowerCase();
+    const hostname = String(record.hostname || payload?.device?.computer_name || "")
+      .trim()
+      .toLowerCase();
+    const mac = String(record.mac_address || payload?.network?.mac_address || "")
+      .replace(/[^a-f0-9]/gi, "")
+      .toLowerCase();
+
+    return assets.find((asset) => {
+      const assetSerial = String(asset.serial_number || "").trim().toLowerCase();
+      const assetHostname = String(asset.hostname || "").trim().toLowerCase();
+      const assetMac = String(asset.mac_address || "")
+        .replace(/[^a-f0-9]/gi, "")
+        .toLowerCase();
+
+      return (
+        (!!serial && !!assetSerial && serial === assetSerial) ||
+        (!!hostname && !!assetHostname && hostname === assetHostname) ||
+        (!!mac && !!assetMac && mac === assetMac)
+      );
+    });
+  }
+
+  async function automaticallyUpdateExistingDiscovery(
+    record: DeviceDiscoveryRecord,
+    asset: ITAsset
+  ) {
+    if (autoProcessedDiscoveryIds.current.has(record.id)) return;
+
+    autoProcessedDiscoveryIds.current.add(record.id);
+    setAutoUpdatingDiscoveryId(record.id);
+
+    try {
+      const collected = collectedTechnicalValues(record.payload);
+      const now = new Date().toISOString();
+
+      const monitoredFields: Array<{
+        key: keyof typeof collected;
+        assetKey: keyof ITAsset;
+        label: string;
+      }> = [
+        { key: "ram", assetKey: "ram", label: "RAM" },
+        { key: "storage", assetKey: "storage", label: "Storage" },
+        { key: "bios_version", assetKey: "bios_version", label: "BIOS Version" },
+        { key: "os", assetKey: "os", label: "Windows / OS" },
+        { key: "processor", assetKey: "processor", label: "Processor" },
+        { key: "motherboard", assetKey: "motherboard", label: "Motherboard" },
+      ];
+
+      const changes = monitoredFields
+        .map(({ key, assetKey, label }) => {
+          const oldValue = String(asset[assetKey] || "").trim();
+          const newValue = String(collected[key] || "").trim();
+          return { label, oldValue, newValue };
+        })
+        .filter(
+          (change) =>
+            change.newValue &&
+            change.oldValue.toLowerCase() !== change.newValue.toLowerCase()
+        );
+
+      const updatePayload = Object.fromEntries(
+        Object.entries(collected).filter(([, value]) => String(value || "").trim())
+      );
+
+      const { error: updateError } = await supabase
+        .from("it_assets")
+        .update({
+          ...updatePayload,
+          online_status: "Online",
+          last_seen_at: now,
+        })
+        .eq("id", asset.id);
+
+      if (updateError) throw updateError;
+
+      const { data: scanRow, error: scanError } = await supabase
+        .from("device_scan_history")
+        .insert({
+          asset_id: asset.id,
+          discovery_id: record.id,
+          hostname: collected.hostname || record.hostname || null,
+          serial_number: collected.serial_number || record.serial_number || null,
+          ip_address: collected.ip_address || null,
+          mac_address: collected.mac_address || record.mac_address || null,
+          scanned_at: now,
+          scan_source: "KOPKOP PowerShell Collector",
+          snapshot: record.payload,
+        })
+        .select("id")
+        .single();
+
+      if (scanError) throw scanError;
+
+      if (changes.length > 0) {
+        const { error: changeError } = await supabase
+          .from("asset_hardware_changes")
+          .insert(
+            changes.map((change) => ({
+              asset_id: asset.id,
+              discovery_id: record.id,
+              field_name: change.label,
+              old_value: change.oldValue || null,
+              new_value: change.newValue || null,
+              changed_at: now,
+            }))
+          );
+
+        if (changeError) throw changeError;
+      }
+
+      const {
+        data: { user: currentUser },
+      } = await supabase.auth.getUser();
+
+      const { error: queueError } = await supabase
+        .from("device_discovery_queue")
+        .update({
+          status: "imported",
+          discovery_type: "existing_asset",
+          matched_asset_id: asset.id,
+          imported_at: now,
+          imported_by: currentUser?.id || null,
+        })
+        .eq("id", record.id);
+
+      if (queueError) throw queueError;
+
+      await Promise.all([
+        refreshAll(false),
+        refreshDeviceDiscoveries(false),
+        refreshLiveIntelligence(),
+      ]);
+    } catch (error) {
+      autoProcessedDiscoveryIds.current.delete(record.id);
+      console.error("Automatic asset update failed:", error);
+    } finally {
+      setAutoUpdatingDiscoveryId(null);
+    }
+  }
+
+  async function refreshDeviceDiscoveries(showLoading = true) {
+    if (showLoading) setLoadingDiscoveries(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("device_discovery_queue")
+        .select("*")
+        .order("received_at", { ascending: false });
+
+      if (error) throw error;
+
+      const records = (data || []) as DeviceDiscoveryRecord[];
+      setDeviceDiscoveries(records);
+      setPendingLiveDevices(
+        records.filter((record) => record.status === "pending").length
+      );
+    } catch (error) {
+      console.error("Could not load device discoveries:", error);
+    } finally {
+      if (showLoading) setLoadingDiscoveries(false);
+    }
+  }
+
+  // Listen for live device collector submissions.
+  useEffect(() => {
+    if (!user) {
+      setPendingLiveDevices(0);
+      return;
+    }
+
+    let active = true;
+
+    async function refreshDiscoveryData() {
+      if (!active) return;
+      await refreshDeviceDiscoveries(false);
+    }
+
+    void refreshDiscoveryData();
+    void refreshLiveIntelligence();
+
+    const channel = supabase
+      .channel("device-discovery-queue")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "device_discovery_queue",
+        },
+        () => {
+          void refreshDiscoveryData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!isAdmin || assets.length === 0 || deviceDiscoveries.length === 0) return;
+
+    const existingPending = deviceDiscoveries.filter(
+      (record) => record.status === "pending"
+    );
+
+    for (const record of existingPending) {
+      const matchedAsset = findAssetForDiscovery(record);
+      if (matchedAsset) {
+        void automaticallyUpdateExistingDiscovery(record, matchedAsset);
+      }
+    }
+  }, [isAdmin, assets, deviceDiscoveries]);
 
   function checkScannerSupport() {
     try {
@@ -1812,8 +2204,31 @@ async function loadComponentHistory() {
     const avgScore = total ? Math.round(enrichedAssets.reduce((sum, asset) => sum + asset.displayScore, 0) / total) : 0;
     const critical = enrichedAssets.filter((a) => a.displayScore < 40).length;
     const needsUpgrade = enrichedAssets.filter((a) => a.displayScore >= 40 && a.displayScore < 65).length;
-    return { total, inUse, slowDevices, outdated, poorPerformance, avgScore, critical, needsUpgrade };
-  }, [enrichedAssets]);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const seenToday = enrichedAssets.filter((asset) => {
+      if (!asset.last_seen_at) return false;
+      return new Date(asset.last_seen_at).getTime() >= startOfToday.getTime();
+    }).length;
+
+    const changesToday = hardwareChanges.filter(
+      (change) => new Date(change.changed_at).getTime() >= startOfToday.getTime()
+    ).length;
+
+    return {
+      total,
+      inUse,
+      slowDevices,
+      outdated,
+      poorPerformance,
+      avgScore,
+      critical,
+      needsUpgrade,
+      seenToday,
+      changesToday,
+    };
+  }, [enrichedAssets, hardwareChanges]);
 
   const healthBreakdown = useMemo(() => {
     return {
@@ -4189,7 +4604,7 @@ async function loadComponentHistory() {
     });
   }
 
-  async function handleDeviceInfoImport(file: File) {
+  async function handleDeviceInfoImport(file: File, preferredAssetId?: number | null) {
     if (!isAdmin) {
       alert("Only admin users can import device information.");
       return;
@@ -4230,8 +4645,14 @@ async function loadComponentHistory() {
         [device.manufacturer, device.model].filter(Boolean).join(" ").trim() ||
         "Imported computer";
 
-      const matchedAsset = findExistingAssetForImport(imported);
-      let baseForm = assetForm;
+      const matchedAsset =
+        (preferredAssetId
+          ? assets.find((asset) => asset.id === preferredAssetId)
+          : null) || findExistingAssetForImport(imported);
+
+      let baseForm: AssetFormState = matchedAsset
+        ? assetForm
+        : { ...EMPTY_ASSET_FORM };
 
       if (matchedAsset) {
         const updateExisting = window.confirm(
@@ -4245,7 +4666,7 @@ async function loadComponentHistory() {
         );
 
         if (!updateExisting) {
-          return;
+          return { loaded: false, matchedAsset: null };
         }
 
         setEditingAssetId(matchedAsset.id);
@@ -4358,13 +4779,168 @@ async function loadComponentHistory() {
       alert(
         matchedAsset
           ? `Existing asset ${matchedAsset.asset_tag} is ready to update. Review the imported technical information, then click Update Asset.`
-          : `Device information imported successfully for ${importedName}. Enter the Asset Tag and Location before saving.`
+          : `Device information imported successfully for ${importedName}. Enter the Asset Tag, Location and assignment details before saving.`
       );
+
+      return {
+        loaded: true,
+        matchedAsset: matchedAsset || null,
+        importedName,
+      };
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "The device information file could not be imported.");
+      return { loaded: false, matchedAsset: null };
     } finally {
       setImportingDeviceInfo(false);
+    }
+  }
+
+  async function openDiscoveryForReview(record: DeviceDiscoveryRecord) {
+    if (!isAdmin) {
+      alert("Only admin users can review discovered devices.");
+      return;
+    }
+
+    if (!record.payload) {
+      alert("This discovery record does not contain a device payload.");
+      return;
+    }
+
+    setProcessingDiscoveryId(record.id);
+
+    try {
+      const liveFile = new File(
+        [JSON.stringify(record.payload)],
+        `KOPKOP_Discovery_${record.hostname || "device"}.json`,
+        { type: "application/json" }
+      );
+
+      const importResult = await handleDeviceInfoImport(
+        liveFile,
+        record.matched_asset_id || null
+      );
+
+      if (!importResult?.loaded) {
+        return;
+      }
+
+      const matchedAsset =
+        importResult.matchedAsset ||
+        (record.matched_asset_id
+          ? assets.find((asset) => asset.id === record.matched_asset_id)
+          : null);
+
+      setActiveDiscoveryId(record.id);
+      setActiveDiscoveryMode(matchedAsset ? "update" : "create");
+      setActiveTab("inventory");
+
+      window.setTimeout(() => {
+        document
+          .getElementById("asset-registration-form")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Could not load this discovered device."
+      );
+    } finally {
+      setProcessingDiscoveryId(null);
+    }
+  }
+
+  async function ignoreDiscovery(record: DeviceDiscoveryRecord) {
+    if (!isAdmin) {
+      alert("Only admin users can ignore discovered devices.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Ignore ${record.hostname || "this device"}? The record will remain in discovery history.`
+    );
+    if (!confirmed) return;
+
+    setProcessingDiscoveryId(record.id);
+
+    try {
+      const { error } = await supabase
+        .from("device_discovery_queue")
+        .update({ status: "ignored" })
+        .eq("id", record.id);
+
+      if (error) throw error;
+      await refreshDeviceDiscoveries(false);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Could not ignore device.");
+    } finally {
+      setProcessingDiscoveryId(null);
+    }
+  }
+
+  async function receiveLatestLiveDevice() {
+    if (!isAdmin) {
+      alert("Only admin users can receive live device information.");
+      return;
+    }
+
+    setCheckingLiveDevice(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("device_discovery_queue")
+        .select("id, payload, hostname, serial_number, received_at")
+        .eq("status", "pending")
+        .order("received_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!data?.payload) {
+        alert(
+          "No live device information is waiting. Run the KOPKOP Live Collector on the computer, then try again."
+        );
+        return;
+      }
+
+      const payloadText = JSON.stringify(data.payload);
+      const liveFile = new File(
+        [payloadText],
+        `KOPKOP_Live_${data.hostname || "device"}.json`,
+        { type: "application/json" }
+      );
+
+      await handleDeviceInfoImport(liveFile);
+
+      const {
+        data: { user: currentUser },
+      } = await supabase.auth.getUser();
+
+      const { error: updateError } = await supabase
+        .from("device_discovery_queue")
+        .update({
+          status: "imported",
+          imported_at: new Date().toISOString(),
+          imported_by: currentUser?.id || null,
+        })
+        .eq("id", data.id);
+
+      if (updateError) {
+        console.error("Could not mark live discovery as imported:", updateError);
+      }
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Could not receive the live device information."
+      );
+    } finally {
+      setCheckingLiveDevice(false);
     }
   }
 
@@ -4372,6 +4948,8 @@ async function loadComponentHistory() {
     setEditingAssetId(null);
     setAssetForm(EMPTY_ASSET_FORM);
     setLastImportedDevice(null);
+    setActiveDiscoveryId(null);
+    setActiveDiscoveryMode(null);
   }
 
   async function handleSaveAsset(e: React.FormEvent) {
@@ -4439,9 +5017,43 @@ async function loadComponentHistory() {
         ? await supabase.from("it_assets").update(payload).eq("id", editingAssetId)
         : await supabase.from("it_assets").insert([payload]);
       if (result.error) throw result.error;
+
+      if (activeDiscoveryId) {
+        const {
+          data: { user: currentUser },
+        } = await supabase.auth.getUser();
+
+        const { error: discoveryError } = await supabase
+          .from("device_discovery_queue")
+          .update({
+            status: "imported",
+            imported_at: new Date().toISOString(),
+            imported_by: currentUser?.id || null,
+          })
+          .eq("id", activeDiscoveryId);
+
+        if (discoveryError) {
+          console.error("Asset saved, but discovery status was not updated:", discoveryError);
+        }
+      }
+
+      const completedFromDiscovery = Boolean(activeDiscoveryId);
+      const completedMode = activeDiscoveryMode;
+      const wasEditing = Boolean(editingAssetId);
+
       resetAssetForm();
       await refreshAll(false);
-      alert(editingAssetId ? "Asset updated successfully." : "Asset added successfully.");
+      await refreshDeviceDiscoveries(false);
+
+      alert(
+        completedFromDiscovery
+          ? completedMode === "update"
+            ? "Existing asset updated and discovery completed successfully."
+            : "New asset created and discovery completed successfully."
+          : wasEditing
+            ? "Asset updated successfully."
+            : "Asset added successfully."
+      );
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Failed to save asset");
@@ -5268,6 +5880,7 @@ async function loadComponentHistory() {
             ["inventory", "▦", "Inventory"],
             ["profile", "◫", "Device Profile"],
             ["scan", "⌁", "Scan Device"],
+            ["discovery", "◉", pendingLiveDevices > 0 ? `Discovery (${pendingLiveDevices})` : "Discovery"],
             ["labels", "⌗", "QR Labels"],
             ["maintenance", "⚒", "Maintenance"],
             ["audit", "✓", "Quick Audit"],
@@ -5306,13 +5919,17 @@ async function loadComponentHistory() {
               <button type="button" onClick={() => openMobileTab("audit")} className="rounded-2xl bg-emerald-600 px-4 py-4 text-left text-sm font-bold text-white">
                 <span className="block text-2xl">📋</span>New Audit
               </button>
+              <button type="button" onClick={() => openMobileTab("discovery")} className="col-span-2 rounded-2xl bg-violet-700 px-4 py-4 text-left text-sm font-bold text-white">
+                <span className="block text-2xl">📡</span>
+                Device Discovery{pendingLiveDevices > 0 ? ` · ${pendingLiveDevices} waiting` : ""}
+              </button>
             </div>
           </div>
         </div>
 
         {activeTab === "dashboard" && (
           <div id="tab-dashboard" className="scroll-mt-24">
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
               {[
                 { label: "Total Assets", value: stats.total, hint: "Registered ICT equipment", icon: "▦", tone: "from-blue-500 to-cyan-500" },
                 { label: "Average Health", value: `${stats.avgScore}%`, hint: "Across all devices", icon: "◉", tone: "from-emerald-500 to-teal-500" },
@@ -5320,6 +5937,8 @@ async function loadComponentHistory() {
                 { label: "Needs Attention", value: attentionDevices, hint: "Watch, upgrade or critical", icon: "!", tone: "from-rose-500 to-orange-500" },
                 { label: "In Use", value: stats.inUse, hint: "Currently active or assigned", icon: "✓", tone: "from-violet-500 to-indigo-500" },
                 { label: "Critical", value: stats.critical, hint: "Health below 40%", icon: "⚠", tone: "from-red-600 to-rose-500" },
+                { label: "Seen Today", value: stats.seenToday, hint: "Computers checked in today", icon: "◉", tone: "from-cyan-500 to-blue-500" },
+                { label: "Hardware Changes", value: stats.changesToday, hint: "Changes detected today", icon: "↕", tone: "from-fuchsia-500 to-violet-500" },
               ].map((card) => (
                 <div key={card.label} className="group relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
                   <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${card.tone}`} />
@@ -6012,7 +6631,7 @@ async function loadComponentHistory() {
               </div>
             </div>
 
-            {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "profile" || activeTab === "scan" || activeTab === "labels") && (
+            {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "profile" || activeTab === "scan" || activeTab === "discovery" || activeTab === "labels") && (
               <div id="tab-inventory" className="scroll-mt-24 rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Inventory overview" subtitle="Select a device to review its specs, condition, update status, and recommendation." />
                 <div className="overflow-hidden rounded-3xl border border-slate-200">
@@ -6371,7 +6990,7 @@ async function loadComponentHistory() {
                           <p><span className="font-semibold text-slate-900">Mouse:</span> {selectedAsset.mouse || "Not recorded"}</p>
                           <p><span className="font-semibold text-slate-900">Charger:</span> {(selectedAsset as any).charger || "Not recorded"}</p>
                           <p><span className="font-semibold text-slate-900">Headset:</span> {(selectedAsset as any).headset || "Not recorded"}</p>
-                          <p><span className="font-semibold text-slate-900">Online Status:</span> {selectedAsset.online_status || "-"}</p>
+                          <p><span className="font-semibold text-slate-900">Online Status:</span> {liveOnlineStatus(selectedAsset)}</p>
                           <p><span className="font-semibold text-slate-900">Windows Update:</span> {selectedAsset.windows_update || "-"}</p>
                           <div className="rounded-2xl bg-slate-50 p-3 mt-3">
                             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</p>
@@ -6508,6 +7127,281 @@ async function loadComponentHistory() {
               </div>
             )}
 
+            {activeTab === "discovery" && (
+              <div className="space-y-5">
+                <div className="rounded-3xl bg-[#0b1f33] p-5 text-white shadow-sm">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-300">
+                        Live device discovery
+                      </p>
+                      <h2 className="mt-1 text-2xl font-black">Discovery Center</h2>
+                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                        Review computers submitted by the KOPKOP collector. Load a pending device
+                        into the asset form to create a new record or update an existing asset.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void refreshDeviceDiscoveries(true)}
+                      disabled={loadingDiscoveries}
+                      className="rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-60"
+                    >
+                      {loadingDiscoveries ? "Refreshing…" : "↻ Refresh Discoveries"}
+                    </button>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="rounded-2xl bg-white/10 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-300">Pending</p>
+                      <p className="mt-1 text-3xl font-black">
+                        {deviceDiscoveries.filter((item) => item.status === "pending").length}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white/10 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-300">Existing</p>
+                      <p className="mt-1 text-3xl font-black">
+                        {deviceDiscoveries.filter((item) => item.discovery_type === "existing_asset").length}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white/10 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-300">New Devices</p>
+                      <p className="mt-1 text-3xl font-black">
+                        {deviceDiscoveries.filter((item) => item.discovery_type === "new_asset").length}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-white/10 p-4">
+                      <p className="text-xs uppercase tracking-wide text-slate-300">Total History</p>
+                      <p className="mt-1 text-3xl font-black">{deviceDiscoveries.length}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-white p-5 shadow-sm">
+                  <SectionTitle
+                    title="Discovered computers"
+                    subtitle="Pending devices appear first. Review each record before changing the official inventory."
+                  />
+
+                  {loadingDiscoveries ? (
+                    <div className="rounded-2xl bg-slate-50 p-5 text-sm text-slate-500">
+                      Loading discovered devices…
+                    </div>
+                  ) : deviceDiscoveries.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+                      <p className="text-lg font-black text-slate-800">No devices discovered yet</p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Run the PowerShell collector on a Windows computer, then refresh this page.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {deviceDiscoveries.map((record) => {
+                        const payload = record.payload || {};
+                        const device = payload.device || {};
+                        const os = payload.operating_system || {};
+                        const hardware = payload.hardware || {};
+                        const memory = hardware.memory || {};
+                        const processor = hardware.processor || {};
+                        const isPending = record.status === "pending";
+                        const matchedInventoryAsset = findAssetForDiscovery(record);
+                        const isExisting = Boolean(matchedInventoryAsset);
+                        const isAutoUpdating = autoUpdatingDiscoveryId === record.id;
+
+                        return (
+                          <div
+                            key={record.id}
+                            className={`rounded-3xl border p-4 ${
+                              isPending
+                                ? "border-violet-200 bg-violet-50/40"
+                                : "border-slate-200 bg-white"
+                            }`}
+                          >
+                            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={`rounded-full px-3 py-1 text-xs font-black ${
+                                    isPending
+                                      ? "bg-amber-100 text-amber-800"
+                                      : record.status === "imported"
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : "bg-slate-100 text-slate-700"
+                                  }`}>
+                                    {isAutoUpdating ? "updating" : record.status}
+                                  </span>
+                                  <span className={`rounded-full px-3 py-1 text-xs font-black ${
+                                    isExisting
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-violet-100 text-violet-800"
+                                  }`}>
+                                    {isExisting ? "Existing Asset" : "New Device"}
+                                  </span>
+                                </div>
+
+                                <h3 className="mt-3 break-words text-xl font-black text-slate-950">
+                                  {record.hostname || device.computer_name || "Unknown computer"}
+                                </h3>
+                                <p className="mt-1 text-sm text-slate-500">
+                                  {[device.manufacturer, device.model].filter(Boolean).join(" ") ||
+                                    "Manufacturer and model not detected"}
+                                </p>
+
+                                <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
+                                  <p><span className="font-bold">Serial:</span> {record.serial_number || device.serial_number || "-"}</p>
+                                  <p><span className="font-bold">MAC:</span> {record.mac_address || "-"}</p>
+                                  <p><span className="font-bold">RAM:</span> {memory.total_ram_gb != null ? `${memory.total_ram_gb} GB` : "-"}</p>
+                                  <p><span className="font-bold">Windows:</span> {os.caption || "-"}</p>
+                                </div>
+
+                                <p className="mt-2 truncate text-xs text-slate-500">
+                                  {processor.name || "Processor not detected"}
+                                </p>
+                                <p className="mt-2 text-xs text-slate-400">
+                                  Received: {record.received_at ? formatDateTime(record.received_at) : "Date unavailable"}
+                                  {matchedInventoryAsset?.last_seen_at
+                                    ? ` · Last seen: ${formatDateTime(matchedInventoryAsset.last_seen_at)}`
+                                    : ""}
+                                </p>
+                              </div>
+
+                              <div className="flex shrink-0 flex-col gap-2 sm:flex-row xl:flex-col">
+                                {isAutoUpdating ? (
+                                  <span className="rounded-2xl bg-blue-100 px-5 py-3 text-center text-sm font-black text-blue-700">
+                                    Automatically updating…
+                                  </span>
+                                ) : isPending ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => void openDiscoveryForReview(record)}
+                                      disabled={processingDiscoveryId === record.id}
+                                      className="rounded-2xl bg-violet-700 px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+                                    >
+                                      {processingDiscoveryId === record.id
+                                        ? "Loading…"
+                                        : isExisting
+                                          ? "Review & Update"
+                                          : "Review & Create"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void ignoreDiscovery(record)}
+                                      disabled={processingDiscoveryId === record.id}
+                                      className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
+                                    >
+                                      Ignore
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="rounded-2xl bg-slate-100 px-5 py-3 text-center text-sm font-bold text-slate-600">
+                                    {record.status === "imported" ? "Loaded into Inventory" : "No action required"}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-3xl bg-white p-5 shadow-sm">
+                  <SectionTitle
+                    title="Device activity timeline"
+                    subtitle="Recent collector check-ins and hardware changes across the ICT fleet."
+                  />
+
+                  <div className="grid gap-5 xl:grid-cols-2">
+                    <div>
+                      <h3 className="mb-3 text-sm font-black uppercase tracking-wide text-slate-600">
+                        Recent check-ins
+                      </h3>
+                      <div className="space-y-3">
+                        {scanHistory.slice(0, 10).map((scan) => {
+                          const asset = assets.find((item) => item.id === scan.asset_id);
+                          return (
+                            <div key={scan.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-black text-slate-950">
+                                    {asset?.asset_tag || scan.hostname || "Unknown device"}
+                                  </p>
+                                  <p className="mt-1 text-sm text-slate-600">
+                                    {scan.hostname || asset?.item_name || "Computer check-in"}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    IP: {scan.ip_address || "-"} · MAC: {scan.mac_address || "-"}
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">
+                                  Seen
+                                </span>
+                              </div>
+                              <p className="mt-2 text-xs text-slate-400">
+                                {formatDateTime(scan.scanned_at)}
+                              </p>
+                            </div>
+                          );
+                        })}
+                        {scanHistory.length === 0 ? (
+                          <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                            No scan history recorded yet.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="mb-3 text-sm font-black uppercase tracking-wide text-slate-600">
+                        Hardware changes
+                      </h3>
+                      <div className="space-y-3">
+                        {hardwareChanges.slice(0, 10).map((change) => {
+                          const asset = assets.find((item) => item.id === change.asset_id);
+                          return (
+                            <div key={change.id} className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-black text-slate-950">
+                                    {asset?.asset_tag || `Asset ${change.asset_id}`}
+                                  </p>
+                                  <p className="mt-1 text-sm font-bold text-violet-800">
+                                    {change.field_name}
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-violet-200 px-3 py-1 text-xs font-black text-violet-800">
+                                  Changed
+                                </span>
+                              </div>
+                              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                                <div className="rounded-xl bg-white p-3">
+                                  <p className="font-bold text-slate-400">Previous</p>
+                                  <p className="mt-1 break-words text-slate-700">{change.old_value || "Not recorded"}</p>
+                                </div>
+                                <div className="rounded-xl bg-white p-3">
+                                  <p className="font-bold text-slate-400">Current</p>
+                                  <p className="mt-1 break-words text-slate-700">{change.new_value || "Not recorded"}</p>
+                                </div>
+                              </div>
+                              <p className="mt-2 text-xs text-slate-400">
+                                {formatDateTime(change.changed_at)}
+                              </p>
+                            </div>
+                          );
+                        })}
+                        {hardwareChanges.length === 0 ? (
+                          <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                            No hardware changes detected yet.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === "history" && (
               <div className="rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Recent audit history" subtitle="Latest compliance and condition checks captured from device audits." />
@@ -6549,58 +7443,101 @@ async function loadComponentHistory() {
           <div className="space-y-6">
 
             {(activeTab === "inventory" || editingAssetId !== null) && (
-              <div className="rounded-3xl bg-white p-5 shadow-sm">
+              <div id="asset-registration-form" className="scroll-mt-28 rounded-3xl bg-white p-5 shadow-sm">
+                {activeDiscoveryId ? (
+                  <div className={`mb-5 rounded-2xl border p-4 ${
+                    activeDiscoveryMode === "update"
+                      ? "border-blue-200 bg-blue-50"
+                      : "border-violet-200 bg-violet-50"
+                  }`}>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-600">
+                      Live Asset Intelligence V4
+                    </p>
+                    <h3 className="mt-1 text-lg font-black text-slate-950">
+                      {activeDiscoveryMode === "update"
+                        ? "Review existing asset update"
+                        : "Complete new asset registration"}
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      The technical information has already been loaded. Review it, complete the
+                      school-controlled fields, then save to finish this discovery.
+                    </p>
+                  </div>
+                ) : null}
+
                 <SectionTitle
-                  title={editingAssetId ? "Edit asset record" : "Add new asset"}
+                  title={
+                    activeDiscoveryMode === "update"
+                      ? "Review discovered asset update"
+                      : activeDiscoveryMode === "create"
+                        ? "Register discovered device"
+                        : editingAssetId
+                          ? "Edit asset record"
+                          : "Add new asset"
+                  }
                   subtitle="Register computers, projectors, printers, network equipment, CCTV devices and other ICT assets."
                 />
 
                 <form onSubmit={handleSaveAsset} className="space-y-5">
                   <section className="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50">
-                    <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">
-                          Automatic device discovery
-                        </p>
-                        <h3 className="mt-1 text-lg font-black text-slate-950">
-                          Import computer information
-                        </h3>
-                        <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-                          Select the JSON file created by the KOPKOP Device Information Collector.
-                          The system will fill the computer specifications automatically.
-                        </p>
-                        {lastImportedDevice ? (
-                          <p className="mt-2 text-xs font-bold text-emerald-700">
-                            ✓ Imported: {lastImportedDevice}
-                          </p>
-                        ) : null}
-                      </div>
+                    <div className="p-4">
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">
+                        Automatic device discovery
+                      </p>
+                      <h3 className="mt-1 text-lg font-black text-slate-950">
+                        Receive computer information
+                      </h3>
+                      <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                        Run the KOPKOP Live Collector on the computer. Its technical information
+                        will be sent securely to this system without transferring a JSON file.
+                      </p>
 
-                      <label
-                        className={`inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl px-5 py-3 text-sm font-black text-white shadow-sm transition ${
-                          importingDeviceInfo
-                            ? "cursor-wait bg-slate-400"
-                            : "bg-cyan-700 hover:bg-cyan-600"
-                        }`}
-                      >
-                        {importingDeviceInfo ? "Importing…" : "📥 Import Device JSON"}
-                        <input
-                          type="file"
-                          accept=".json,application/json"
-                          className="hidden"
-                          disabled={importingDeviceInfo}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (file) void handleDeviceInfoImport(file);
-                            event.currentTarget.value = "";
-                          }}
-                        />
-                      </label>
+                      {lastImportedDevice ? (
+                        <p className="mt-2 text-xs font-bold text-emerald-700">
+                          ✓ Loaded: {lastImportedDevice}
+                        </p>
+                      ) : null}
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => void receiveLatestLiveDevice()}
+                          disabled={checkingLiveDevice || importingDeviceInfo}
+                          className="min-h-14 rounded-2xl bg-cyan-700 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        >
+                          {checkingLiveDevice
+                            ? "Receiving…"
+                            : pendingLiveDevices > 0
+                              ? `📡 Receive Live Device (${pendingLiveDevices})`
+                              : "📡 Check for Live Device"}
+                        </button>
+
+                        <label
+                          className={`inline-flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border px-5 py-3 text-center text-sm font-black shadow-sm transition ${
+                            importingDeviceInfo
+                              ? "cursor-wait border-slate-300 bg-slate-200 text-slate-500"
+                              : "border-cyan-300 bg-white text-cyan-800 hover:bg-cyan-50"
+                          }`}
+                        >
+                          {importingDeviceInfo ? "Importing…" : "📥 Import JSON Backup"}
+                          <input
+                            type="file"
+                            accept=".json,application/json"
+                            className="hidden"
+                            disabled={importingDeviceInfo}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) void handleDeviceInfoImport(file);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
                     </div>
 
                     <div className="border-t border-cyan-200/70 bg-white/60 px-4 py-3 text-xs leading-5 text-slate-600">
-                      After importing, manually enter the Asset Tag, Location, Assigned To,
-                      condition, purchase details and photographs. Review all imported values before saving.
+                      Existing devices are matched by serial number, computer name or MAC address.
+                      The Asset Tag, Location, Assigned To, purchase information and photographs remain under technician control.
                     </div>
                   </section>
 
@@ -6900,7 +7837,15 @@ async function loadComponentHistory() {
                       disabled={savingAsset || uploadingPhotoSlot !== null}
                       className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {savingAsset ? "Saving..." : editingAssetId ? "Update Asset" : "Save Asset"}
+                      {savingAsset
+                        ? "Saving..."
+                        : activeDiscoveryMode === "update"
+                          ? "Approve & Update Asset"
+                          : activeDiscoveryMode === "create"
+                            ? "Create Discovered Asset"
+                            : editingAssetId
+                              ? "Update Asset"
+                              : "Save Asset"}
                     </button>
 
                     {editingAssetId ? (
