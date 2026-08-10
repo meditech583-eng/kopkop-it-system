@@ -1495,6 +1495,53 @@ const [deletingComponentId, setDeletingComponentId] =
       .join("; ");
   }
 
+  function isPlaceholderHardwareValue(value?: string | null) {
+    const normalized = String(value || "").trim().toLowerCase();
+
+    if (!normalized) return true;
+
+    const placeholders = [
+      "system serial number",
+      "default string",
+      "to be filled by o.e.m.",
+      "to be filled by oem",
+      "none",
+      "unknown",
+      "not specified",
+      "not applicable",
+      "n/a",
+      "na",
+      "system manufacturer",
+      "system product name",
+    ];
+
+    return placeholders.includes(normalized);
+  }
+
+  function cleanCollectorIdentityValue(value?: string | null) {
+    const cleaned = String(value || "").trim();
+    return isPlaceholderHardwareValue(cleaned) ? "" : cleaned;
+  }
+
+  function normalizeDeviceName(value?: string | null) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/_/g, "-");
+  }
+
+  function normalizeSerial(value?: string | null) {
+    const cleaned = cleanCollectorIdentityValue(value);
+    return cleaned.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function normalizeMac(value?: string | null) {
+    return String(value || "")
+      .replace(/[^a-f0-9]/gi, "")
+      .toLowerCase();
+  }
+
   function collectedTechnicalValues(payload: any) {
     const device = payload?.device || {};
     const os = payload?.operating_system || {};
@@ -1507,9 +1554,10 @@ const [deletingComponentId, setDeletingComponentId] =
     const security = payload?.security || {};
 
     return {
-      brand: String(device.manufacturer || "").trim(),
-      model: String(device.model || "").trim(),
-      serial_number: String(device.serial_number || "").trim(),
+      // Ignore generic BIOS placeholders so they do not overwrite good inventory data.
+      brand: cleanCollectorIdentityValue(device.manufacturer),
+      model: cleanCollectorIdentityValue(device.model),
+      serial_number: cleanCollectorIdentityValue(device.serial_number),
       os: [os.caption, os.architecture, os.build_number ? `Build ${os.build_number}` : ""]
         .filter(Boolean)
         .join(" - "),
@@ -1541,34 +1589,48 @@ const [deletingComponentId, setDeletingComponentId] =
   }
 
   function findAssetForDiscovery(record: DeviceDiscoveryRecord) {
+    // If the discovery has already been linked to an asset, use that first.
     if (record.matched_asset_id) {
       const direct = assets.find((asset) => asset.id === record.matched_asset_id);
       if (direct) return direct;
     }
 
     const payload = record.payload || {};
-    const serial = String(record.serial_number || payload?.device?.serial_number || "")
-      .trim()
-      .toLowerCase();
-    const hostname = String(record.hostname || payload?.device?.computer_name || "")
-      .trim()
-      .toLowerCase();
-    const mac = String(record.mac_address || payload?.network?.mac_address || "")
-      .replace(/[^a-f0-9]/gi, "")
-      .toLowerCase();
+
+    const serial = normalizeSerial(
+      record.serial_number || payload?.device?.serial_number || ""
+    );
+    const hostname = normalizeDeviceName(
+      record.hostname || payload?.device?.computer_name || ""
+    );
+    const mac = normalizeMac(
+      record.mac_address || payload?.network?.mac_address || ""
+    );
 
     return assets.find((asset) => {
-      const assetSerial = String(asset.serial_number || "").trim().toLowerCase();
-      const assetHostname = String(asset.hostname || "").trim().toLowerCase();
-      const assetMac = String(asset.mac_address || "")
-        .replace(/[^a-f0-9]/gi, "")
-        .toLowerCase();
+      const assetSerial = normalizeSerial(asset.serial_number);
+      const assetHostname = normalizeDeviceName(asset.hostname);
 
-      return (
-        (!!serial && !!assetSerial && serial === assetSerial) ||
-        (!!hostname && !!assetHostname && hostname === assetHostname) ||
-        (!!mac && !!assetMac && mac === assetMac)
-      );
+      // Older/manual inventory records may have the Windows computer name
+      // stored in item_name instead of hostname, so check both.
+      const assetItemName = normalizeDeviceName(asset.item_name);
+
+      const assetMac = normalizeMac(asset.mac_address);
+
+      const serialMatches =
+        !!serial && !!assetSerial && serial === assetSerial;
+
+      const hostnameMatches =
+        !!hostname &&
+        (
+          (!!assetHostname && hostname === assetHostname) ||
+          (!!assetItemName && hostname === assetItemName)
+        );
+
+      const macMatches =
+        !!mac && !!assetMac && mac === assetMac;
+
+      return serialMatches || hostnameMatches || macMatches;
     });
   }
 
