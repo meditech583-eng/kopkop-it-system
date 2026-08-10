@@ -1660,16 +1660,47 @@ const [deletingComponentId, setDeletingComponentId] =
         { key: "motherboard", assetKey: "motherboard", label: "Motherboard" },
       ];
 
+      // Compare monitored hardware values semantically, not only as raw text.
+      // This prevents false Storage changes such as:
+      // "59 GB Storage; 238 GB SSD" -> "238 GB SSD" when the physical SSD is unchanged.
+      function normalizeHardwareComparisonValue(label: string, value?: string | null) {
+        const raw = String(value || "").trim().toLowerCase();
+        if (!raw) return "";
+
+        if (label === "Storage") {
+          // Keep only physical-drive capacity/type tokens. Ignore free-space / generic
+          // "Storage" fragments because free space changes during normal use.
+          const physicalDrives = Array.from(
+            raw.matchAll(/(\d+(?:\.\d+)?)\s*(tb|gb)\s*(ssd|hdd)/gi)
+          ).map((match) => {
+            const size = Number(match[1]);
+            const unit = match[2].toLowerCase();
+            const type = match[3].toLowerCase();
+            const sizeGb = unit === "tb" ? Math.round(size * 1024) : Math.round(size);
+            return `${sizeGb}gb-${type}`;
+          });
+
+          if (physicalDrives.length > 0) {
+            return physicalDrives.sort().join("|");
+          }
+        }
+
+        return raw.replace(/\s+/g, " " );
+      }
+
       const changes = monitoredFields
         .map(({ key, assetKey, label }) => {
           const oldValue = String(asset[assetKey] || "").trim();
           const newValue = String(collected[key] || "").trim();
-          return { label, oldValue, newValue };
+          const oldComparable = normalizeHardwareComparisonValue(label, oldValue);
+          const newComparable = normalizeHardwareComparisonValue(label, newValue);
+
+          return { label, oldValue, newValue, oldComparable, newComparable };
         })
         .filter(
           (change) =>
             change.newValue &&
-            change.oldValue.toLowerCase() !== change.newValue.toLowerCase()
+            change.oldComparable !== change.newComparable
         );
 
       const updatePayload = Object.fromEntries(
