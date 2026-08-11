@@ -2488,22 +2488,37 @@ async function loadComponentHistory() {
         .trim()
         .replace(/\s+/g, " ");
 
-      const normalizedLocation = rawLocation.toLowerCase();
+      const normalizedLocation = rawLocation
+  .toLowerCase()
+  .replace(/['"`’“”]/g, "")
+  .replace(/[^a-z0-9\s]/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
 
       if (!locationLabels.has(normalizedLocation)) {
-        locationLabels.set(
-          normalizedLocation,
-          rawLocation === "Unassigned"
-            ? "Unassigned"
-            : rawLocation
-                .split(" ")
-                .map((word) =>
-                  word.length > 0
-                    ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-                    : word
-                )
-                .join(" ")
-        );
+        const displayLocation =
+  normalizedLocation === "it office"
+    ? "IT Office"
+    : normalizedLocation === "it department"
+      ? "IT Department"
+      : normalizedLocation === "hr department"
+        ? "HR Department"
+        : normalizedLocation === "admin office"
+          ? "Admin Office"
+          : normalizedLocation === "finance department"
+            ? "Finance Department"
+            : rawLocation === "Unassigned"
+              ? "Unassigned"
+              : normalizedLocation
+                  .split(" ")
+                  .map((word) =>
+                    word.length > 0
+                      ? word.charAt(0).toUpperCase() + word.slice(1)
+                      : word
+                  )
+                  .join(" ");
+
+locationLabels.set(normalizedLocation, displayLocation);
       }
 
       acc[normalizedLocation] = (acc[normalizedLocation] || 0) + 1;
