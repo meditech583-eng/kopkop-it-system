@@ -2638,24 +2638,120 @@ locationLabels.set(normalizedLocation, displayLocation);
     }, 120);
   }
 
-  function findAssetByCode(code: string) {
-    const normalized = code.trim().toLowerCase();
-    return enrichedAssets.find(
-      (asset) =>
-        asset.asset_tag?.toLowerCase() === normalized ||
-        asset.serial_number?.toLowerCase() === normalized
+  function scannerLookupCandidates(code: string) {
+    const raw = String(code || "").trim();
+    const candidates = new Set<string>();
+
+    const addCandidate = (value?: string | null) => {
+      const cleaned = String(value || "").trim();
+      if (!cleaned) return;
+
+      candidates.add(cleaned);
+
+      // Some QR readers return URL-encoded text.
+      try {
+        const decoded = decodeURIComponent(cleaned);
+        if (decoded && decoded !== cleaned) candidates.add(decoded);
+      } catch {
+        // Ignore malformed URI sequences and keep the original value.
+      }
+    };
+
+    addCandidate(raw);
+
+    // Kopkop QR labels currently store a public device URL such as:
+    // https://kopkop-it-system.vercel.app/device/KC-LT5QS
+    // Extract the asset tag from that URL so the logged-in scanner can
+    // match the same QR code directly against the internal inventory.
+    try {
+      const parsed = new URL(raw, window.location.origin);
+
+      const queryKeys = [
+        "asset_tag",
+        "assetTag",
+        "tag",
+        "code",
+        "serial",
+        "serial_number",
+      ];
+
+      queryKeys.forEach((key) => addCandidate(parsed.searchParams.get(key)));
+
+      const pathParts = parsed.pathname
+        .split("/")
+        .filter(Boolean)
+        .map((part) => {
+          try {
+            return decodeURIComponent(part);
+          } catch {
+            return part;
+          }
+        });
+
+      const deviceIndex = pathParts.findIndex(
+        (part) => part.toLowerCase() === "device"
+      );
+
+      if (deviceIndex >= 0 && pathParts[deviceIndex + 1]) {
+        addCandidate(pathParts[deviceIndex + 1]);
+      }
+
+      // Also keep the final URL segment as a useful fallback.
+      if (pathParts.length > 0) {
+        addCandidate(pathParts[pathParts.length - 1]);
+      }
+    } catch {
+      // The scanned value is not a URL. Raw asset tags / serials are still valid.
+    }
+
+    // Support common scanner prefixes if a label is ever printed as:
+    // ASSET:KC-LT5QS, TAG:KC-LT5QS, SERIAL:12345, etc.
+    const prefixMatch = raw.match(
+      /^(?:asset(?:_tag)?|tag|serial(?:_number)?|code)\s*[:=#-]\s*(.+)$/i
     );
+    if (prefixMatch?.[1]) addCandidate(prefixMatch[1]);
+
+    return Array.from(candidates);
+  }
+
+  function findAssetByCode(code: string) {
+    const normalizedCandidates = scannerLookupCandidates(code)
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    return enrichedAssets.find((asset) => {
+      const assetTag = String(asset.asset_tag || "").trim().toLowerCase();
+      const serialNumber = String(asset.serial_number || "").trim().toLowerCase();
+
+      return normalizedCandidates.some(
+        (candidate) =>
+          (!!assetTag && candidate === assetTag) ||
+          (!!serialNumber && candidate === serialNumber)
+      );
+    });
   }
 
   function handleScannedCode(code: string) {
-    const matched = findAssetByCode(code);
-  
+    const cleanedCode = String(code || "").trim();
+    if (!cleanedCode) return false;
+
+    const matched = findAssetByCode(cleanedCode);
+
     if (!matched) {
-      setScannerStatus(`No asset found for code: ${code}`);
+      const candidates = scannerLookupCandidates(cleanedCode);
+      const extracted =
+        candidates.find(
+          (candidate) =>
+            candidate.trim().toLowerCase() !== cleanedCode.toLowerCase()
+        ) || cleanedCode;
+
+      setScannerStatus(
+        `QR detected, but no matching asset was found for: ${extracted}`
+      );
       return false;
     }
-  
-    setManualScanCode(code);
+
+    setManualScanCode(matched.asset_tag);
     setScannerStatus(`Matched ${matched.asset_tag} - ${matched.item_name}`);
     stopScanner();
     openDeviceProfile(matched.id);
@@ -2669,10 +2765,24 @@ locationLabels.set(normalizedLocation, displayLocation);
         return;
       }
 
-      const existingScript = document.querySelector<HTMLScriptElement>("script[data-kopkop-jsqr='true']");
+      const existingScript = document.querySelector<HTMLScriptElement>(
+        "script[data-kopkop-jsqr='true']"
+      );
+
       if (existingScript) {
-        existingScript.addEventListener("load", () => resolve(Boolean(window.jsQR)), { once: true });
-        existingScript.addEventListener("error", () => resolve(false), { once: true });
+        if (window.jsQR) {
+          resolve(true);
+          return;
+        }
+
+        existingScript.addEventListener(
+          "load",
+          () => resolve(Boolean(window.jsQR)),
+          { once: true }
+        );
+        existingScript.addEventListener("error", () => resolve(false), {
+          once: true,
+        });
         return;
       }
 
@@ -2688,57 +2798,102 @@ locationLabels.set(normalizedLocation, displayLocation);
   }
 
   function startJsQrFallbackScan() {
-    setScannerStatus("Mobile QR scanner active. Point your phone camera at the QR label.");
+    setScannerStatus(
+      "QR scanner active. Hold the QR code steady inside the camera view."
+    );
 
     const scan = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const jsQR = window.jsQR;
 
+      if (!mediaStreamRef.current) return;
+
       if (!video || !canvas || !jsQR) {
-        scanLoopRef.current = window.setTimeout(scan, 350);
+        scanLoopRef.current = window.setTimeout(scan, 200);
         return;
       }
 
-      if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
-        scanLoopRef.current = window.setTimeout(scan, 350);
+      if (
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        video.videoWidth === 0 ||
+        video.videoHeight === 0
+      ) {
+        scanLoopRef.current = window.setTimeout(scan, 200);
         return;
       }
 
-      const width = video.videoWidth;
-      const height = video.videoHeight;
+      // Limit the working canvas size on high-resolution phone cameras.
+      // This makes repeated QR decoding faster and more reliable.
+      const maxWidth = 1280;
+      const scale = Math.min(1, maxWidth / video.videoWidth);
+      const width = Math.max(1, Math.round(video.videoWidth * scale));
+      const height = Math.max(1, Math.round(video.videoHeight * scale));
+
       canvas.width = width;
       canvas.height = height;
 
       const context = canvas.getContext("2d", { willReadFrequently: true });
       if (!context) {
-        setScannerStatus("Could not read camera image. Try manual scan.");
+        setScannerStatus("Could not read the camera image. Try manual lookup.");
         return;
       }
 
-      context.drawImage(video, 0, 0, width, height);
-      const imageData = context.getImageData(0, 0, width, height);
-      const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+      try {
+        context.drawImage(video, 0, 0, width, height);
+        const imageData = context.getImageData(0, 0, width, height);
+        const result = jsQR(
+          imageData.data,
+          imageData.width,
+          imageData.height,
+          { inversionAttempts: "attemptBoth" }
+        );
 
-      if (result?.data && handleScannedCode(result.data)) return;
-      scanLoopRef.current = window.setTimeout(scan, 350);
+        if (result?.data && handleScannedCode(result.data)) return;
+      } catch (scanError) {
+        console.debug("jsQR frame scan error:", scanError);
+      }
+
+      scanLoopRef.current = window.setTimeout(scan, 200);
     };
 
     scan();
   }
 
-  async function startScanner() {
-  setScannerSupported(true);
+  async function waitForScannerVideoElement() {
+    // setScannerOpen(true) causes React to mount <video>. On phones that
+    // render slowly, the old fixed 100 ms delay can finish before videoRef exists.
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (videoRef.current) return videoRef.current;
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
 
+    throw new Error("Scanner video element did not become ready.");
+  }
+
+  async function startScanner() {
     try {
       stopScanner();
-      setScannerStatus("Requesting camera access...");
+
+      if (
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== "function"
+      ) {
+        setScannerSupported(false);
+        setScannerStatus(
+          "This browser does not support camera scanning. Use Chrome/Safari on your phone or use manual lookup."
+        );
+        return;
+      }
+
+      setScannerSupported(true);
+      setScannerStatus("Requesting rear camera access...");
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
         },
         audio: false,
       });
@@ -2746,93 +2901,183 @@ locationLabels.set(normalizedLocation, displayLocation);
       mediaStreamRef.current = stream;
       setScannerOpen(true);
 
-      await new Promise((resolve) => window.setTimeout(resolve, 100));
+      const video = await waitForScannerVideoElement();
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute("playsinline", "true");
-        await videoRef.current.play();
-      }
+      // The stream may have been stopped while React was mounting the video.
+      if (!mediaStreamRef.current) return;
 
-      if (window.BarcodeDetector && typeof window.BarcodeDetector === "function") {
+      video.srcObject = stream;
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "true");
+      video.setAttribute("webkit-playsinline", "true");
+
+      await video.play();
+
+      // Give autofocus/exposure a short moment before decoding frames.
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+
+      const BarcodeDetectorCtor = window.BarcodeDetector;
+
+      if (BarcodeDetectorCtor && typeof BarcodeDetectorCtor === "function") {
         try {
-          const detector = new window.BarcodeDetector({
-            formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
-          });
+          const desiredFormats = [
+            "qr_code",
+            "code_128",
+            "code_39",
+            "ean_13",
+            "ean_8",
+            "upc_a",
+            "upc_e",
+          ];
 
-          setScannerStatus("Camera scanner active. Point at the QR label.");
+          let formats = desiredFormats;
+
+          if (typeof BarcodeDetectorCtor.getSupportedFormats === "function") {
+            const supportedFormats =
+              await BarcodeDetectorCtor.getSupportedFormats();
+
+            const supportedSet = new Set(supportedFormats);
+            formats = desiredFormats.filter((format) =>
+              supportedSet.has(format)
+            );
+          }
+
+          // If the browser's native detector does not support QR, use jsQR.
+          if (!formats.includes("qr_code")) {
+            throw new Error("Native BarcodeDetector does not support QR codes.");
+          }
+
+          const detector = new BarcodeDetectorCtor({ formats });
+
+          setScannerStatus(
+            "Camera scanner active. Hold the QR label steady in the centre."
+          );
 
           const scan = async () => {
-            if (!videoRef.current || videoRef.current.readyState < 2) {
-              scanLoopRef.current = window.setTimeout(scan, 350);
+            const currentVideo = videoRef.current;
+
+            if (!mediaStreamRef.current) return;
+
+            if (
+              !currentVideo ||
+              currentVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+              currentVideo.videoWidth === 0 ||
+              currentVideo.videoHeight === 0
+            ) {
+              scanLoopRef.current = window.setTimeout(scan, 200);
               return;
             }
 
             try {
-              const results = await detector.detect(videoRef.current);
-              const value = results?.[0]?.rawValue;
+              const results = await detector.detect(currentVideo);
+              const value = results?.[0]?.rawValue?.trim();
+
               if (value && handleScannedCode(value)) return;
             } catch (detectError) {
-              console.debug("BarcodeDetector unavailable, switching to mobile QR fallback:", detectError);
+              console.debug(
+                "Native BarcodeDetector scan failed; switching to jsQR:",
+                detectError
+              );
+
               const fallbackLoaded = await loadJsQrFallback();
               if (fallbackLoaded) {
                 startJsQrFallbackScan();
                 return;
               }
-              setScannerStatus("Auto scan is not supported on this phone. Type the asset tag below.");
+
+              setScannerStatus(
+                "Camera is open, but automatic QR detection could not start. Use manual lookup below."
+              );
               return;
             }
 
-            scanLoopRef.current = window.setTimeout(scan, 350);
+            scanLoopRef.current = window.setTimeout(scan, 200);
           };
 
           scan();
           return;
         } catch (detectorError) {
-          console.debug("BarcodeDetector failed, using mobile QR fallback:", detectorError);
+          console.debug(
+            "Native BarcodeDetector unavailable; using jsQR fallback:",
+            detectorError
+          );
         }
       }
 
       const fallbackLoaded = await loadJsQrFallback();
+
       if (fallbackLoaded) {
         startJsQrFallbackScan();
       } else {
-        setScannerStatus("Camera opened, but QR auto-detect could not load. Type the asset tag below.");
+        setScannerStatus(
+          "Camera opened, but the QR decoder could not load. Check internet access or use manual lookup below."
+        );
       }
     } catch (error) {
       console.error("Camera access error:", error);
       stopScanner();
 
       if (error instanceof DOMException) {
-        if (error.name === "NotAllowedError") {
-          setScannerStatus("Camera permission denied. On your phone, allow camera access for this website and try again.");
-        } else if (error.name === "NotFoundError") {
-          setScannerStatus("No camera device found. Please check your phone camera.");
-        } else if (error.name === "NotReadableError") {
-          setScannerStatus("Camera is being used by another app. Close camera/WhatsApp/TikTok and try again.");
+        if (
+          error.name === "NotAllowedError" ||
+          error.name === "PermissionDeniedError"
+        ) {
+          setScannerStatus(
+            "Camera permission was denied. Allow camera access for this website in your phone browser settings, then try again."
+          );
+        } else if (
+          error.name === "NotFoundError" ||
+          error.name === "DevicesNotFoundError"
+        ) {
+          setScannerStatus("No phone camera was found.");
+        } else if (
+          error.name === "NotReadableError" ||
+          error.name === "TrackStartError"
+        ) {
+          setScannerStatus(
+            "The camera is busy. Close Camera, WhatsApp, TikTok or another app using it, then try again."
+          );
         } else if (error.name === "SecurityError") {
-          setScannerStatus("Camera access needs HTTPS. Open the Vercel HTTPS link, not an insecure link.");
+          setScannerStatus(
+            "Camera access requires HTTPS. Open the secure Vercel HTTPS address."
+          );
+        } else if (error.name === "OverconstrainedError") {
+          setScannerStatus(
+            "The requested camera settings are not supported by this phone. Please try again."
+          );
         } else {
           setScannerStatus(`Camera error: ${error.message}`);
         }
       } else {
-        setScannerStatus("Could not access camera. Please check permissions and try again.");
+        const message =
+          error instanceof Error ? error.message : "Unknown camera error";
+        setScannerStatus(`Could not start QR scanner: ${message}`);
       }
     }
   }
 
   function stopScanner() {
-    if (scanLoopRef.current) {
+    if (scanLoopRef.current !== null) {
       window.clearTimeout(scanLoopRef.current);
       scanLoopRef.current = null;
     }
+
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
+
     if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+      } catch {
+        // Ignore pause errors while unmounting.
+      }
       videoRef.current.srcObject = null;
     }
+
     setScannerOpen(false);
   }
 
@@ -6713,7 +6958,7 @@ locationLabels.set(normalizedLocation, displayLocation);
 
         {activeTab === "scan" && (
           <div id="tab-scan" className="scroll-mt-24 mt-6 rounded-3xl bg-white p-5 shadow-sm">
-            <SectionTitle title="Barcode / QR scanning" subtitle="Scan an asset tag or serial number to open the correct device record instantly." />
+            <SectionTitle title="Barcode / QR scanning" subtitle="Scan a Kopkop QR label, asset tag, or serial number to open the correct internal device record instantly." />
             <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
               <div className="rounded-3xl border border-slate-200 p-5">
                 <div className="flex flex-wrap gap-3">
@@ -6728,7 +6973,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                 <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-slate-950">
                   {scannerOpen ? (
                     <>
-                      <video ref={videoRef} className="h-[320px] w-full object-cover" muted playsInline autoPlay />
+                      <video ref={videoRef} className="h-[320px] w-full object-cover" muted playsInline autoPlay disablePictureInPicture />
                       <canvas ref={canvasRef} className="hidden" />
                     </>
                   ) : (
@@ -6767,7 +7012,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                 <div className="mt-6 rounded-2xl bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Best practice</p>
                   <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                    <li>• Print labels using the asset tag as the QR value.</li>
+                    <li>• Your existing public device URL QR labels are supported.</li>
                     <li>• Keep the same asset tag in the system and on the physical device.</li>
                     <li>• You can also scan the serial number if it is saved in the system.</li>
                   </ul>
