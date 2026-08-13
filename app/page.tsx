@@ -228,6 +228,14 @@ type ComponentFormState = {
 };
 type MaintenanceStatus = "Open" | "In Progress" | "Waiting for Parts" | "Completed" | "Cancelled";
 type MaintenancePriority = "Low" | "Medium" | "High" | "Critical";
+type MaintenanceEvidenceSlot = "before" | "work" | "completed";
+
+type MaintenanceEvidencePhoto = {
+  slot: MaintenanceEvidenceSlot;
+  label: string;
+  url: string;
+  path: string;
+};
 
 type MaintenanceRecord = {
   id: number;
@@ -880,6 +888,23 @@ function safeFileName(value: string) {
     .toLowerCase();
 }
 
+function maintenanceEvidenceLabel(slot: MaintenanceEvidenceSlot) {
+  switch (slot) {
+    case "before":
+      return "Before / Fault Evidence";
+    case "work":
+      return "Work Performed";
+    case "completed":
+      return "Completed / Tested";
+    default:
+      return "Maintenance Evidence";
+  }
+}
+
+function maintenanceEvidenceFolder(ticketId: number) {
+  return `maintenance/${ticketId}`;
+}
+
 function buildPrintScript() {
   return `
     <script>
@@ -1336,6 +1361,9 @@ const [componentHistory, setComponentHistory] =
 const [deletingComponentId, setDeletingComponentId] =
   useState<number | null>(null);
   const [uploadingPhotoSlot, setUploadingPhotoSlot] = useState<"front" | "back" | "label" | null>(null);
+  const [maintenanceEvidence, setMaintenanceEvidence] = useState<MaintenanceEvidencePhoto[]>([]);
+  const [uploadingMaintenanceEvidenceSlot, setUploadingMaintenanceEvidenceSlot] =
+    useState<MaintenanceEvidenceSlot | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<number | null>(null);
   const [editingAssetId, setEditingAssetId] = useState<number | null>(null);
   const [assetForm, setAssetForm] = useState<AssetFormState>(EMPTY_ASSET_FORM);
@@ -3542,7 +3570,7 @@ locationLabels.set(normalizedLocation, displayLocation);
     printWindow.document.close();
   }
 
-  function printMaintenanceReport(record: MaintenanceRecord) {
+  async function printMaintenanceReport(record: MaintenanceRecord) {
     const relatedAsset = record.asset_id ? maintenanceAssetsById.get(record.asset_id) || null : null;
     const generatedAt = new Date();
     const reportYear = new Date(record.date_reported || record.created_at || Date.now()).getFullYear();
@@ -3564,11 +3592,8 @@ locationLabels.set(normalizedLocation, displayLocation);
               ? { accent: "#a16207", soft: "#fef3c7" }
               : { accent: "#0369a1", soft: "#e0f2fe" };
 
-    const photoUrls = [
-      { label: "Overall Device", url: relatedAsset?.photo_front_url },
-      { label: "Additional Photo", url: relatedAsset?.photo_back_url },
-      { label: "Asset / Serial Label", url: relatedAsset?.photo_label_url },
-    ].filter((photo) => Boolean(photo.url));
+    // Maintenance reports use ticket-specific job evidence, not asset passport photos.
+    const photoUrls = await getMaintenanceEvidence(record.id);
 
     const reportHtml = `
       <!DOCTYPE html>
@@ -3791,12 +3816,12 @@ locationLabels.set(normalizedLocation, displayLocation);
               <div class="section-body">${safeHtml(record.resolution_notes || "No resolution recorded.")}</div>
             </section>
 
-            ${
-              photoUrls.length
-                ? `<section class="section">
-                    <div class="section-title">Photographic Asset Evidence</div>
-                    <div class="section-body">
-                      <div class="photos">
+            <section class="section">
+              <div class="section-title">Photographic Maintenance Evidence</div>
+              <div class="section-body">
+                ${
+                  photoUrls.length
+                    ? `<div class="photos">
                         ${photoUrls
                           .map(
                             (photo) => `<div class="photo-card">
@@ -3805,11 +3830,11 @@ locationLabels.set(normalizedLocation, displayLocation);
                             </div>`
                           )
                           .join("")}
-                      </div>
-                    </div>
-                  </section>`
-                : ""
-            }
+                      </div>`
+                    : `<div style="color:#64748b;">No maintenance job evidence was uploaded for this ticket.</div>`
+                }
+              </div>
+            </section>
 
             <section class="signatures">
               <div><div class="signature-line"><div class="signature-role">${safeHtml(record.technician || "ICT Technician")}</div><div class="signature-help">Technician Signature / Date</div></div></div>
@@ -4606,7 +4631,138 @@ locationLabels.set(normalizedLocation, displayLocation);
     }
   }
 
+  async function getMaintenanceEvidence(ticketId: number): Promise<MaintenanceEvidencePhoto[]> {
+    const folder = maintenanceEvidenceFolder(ticketId);
+    const { data, error } = await supabase.storage
+      .from("asset-photos")
+      .list(folder, {
+        limit: 100,
+        sortBy: { column: "created_at", order: "desc" },
+      });
+
+    if (error) {
+      console.error("Could not load maintenance evidence:", error);
+      return [];
+    }
+
+    const slots: MaintenanceEvidenceSlot[] = ["before", "work", "completed"];
+    const photos: MaintenanceEvidencePhoto[] = [];
+
+    for (const slot of slots) {
+      const file = (data || []).find((item) => item.name.startsWith(`${slot}-`));
+      if (!file) continue;
+
+      const path = `${folder}/${file.name}`;
+      const { data: publicData } = supabase.storage.from("asset-photos").getPublicUrl(path);
+
+      photos.push({
+        slot,
+        label: maintenanceEvidenceLabel(slot),
+        url: publicData.publicUrl,
+        path,
+      });
+    }
+
+    return photos;
+  }
+
+  async function loadMaintenanceEvidence(ticketId: number) {
+    const photos = await getMaintenanceEvidence(ticketId);
+    setMaintenanceEvidence(photos);
+  }
+
+  async function handleMaintenanceEvidenceUpload(
+    file: File,
+    slot: MaintenanceEvidenceSlot
+  ) {
+    if (!isAdmin) {
+      alert("Only admin users can upload maintenance evidence.");
+      return;
+    }
+
+    if (!maintenanceForm.id) {
+      alert("Save the maintenance ticket first, then edit it to upload job evidence.");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Please use an image smaller than 8 MB.");
+      return;
+    }
+
+    setUploadingMaintenanceEvidenceSlot(slot);
+
+    try {
+      const ticketId = maintenanceForm.id;
+      const folder = maintenanceEvidenceFolder(ticketId);
+
+      // Keep one current image per evidence slot so the printed report stays clear.
+      const { data: existingFiles, error: listError } = await supabase.storage
+        .from("asset-photos")
+        .list(folder, { limit: 100 });
+
+      if (listError) throw listError;
+
+      const oldPaths = (existingFiles || [])
+        .filter((item) => item.name.startsWith(`${slot}-`))
+        .map((item) => `${folder}/${item.name}`);
+
+      if (oldPaths.length > 0) {
+        const { error: removeError } = await supabase.storage
+          .from("asset-photos")
+          .remove(oldPaths);
+        if (removeError) throw removeError;
+      }
+
+      const extension = (file.name.split(".").pop() || "jpg")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const path = `${folder}/${slot}-${Date.now()}.${extension || "jpg"}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("asset-photos")
+        .upload(path, file, { cacheControl: "3600", upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      await loadMaintenanceEvidence(ticketId);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Maintenance evidence upload failed.");
+    } finally {
+      setUploadingMaintenanceEvidenceSlot(null);
+    }
+  }
+
+  async function clearMaintenanceEvidence(slot: MaintenanceEvidenceSlot) {
+    if (!isAdmin || !maintenanceForm.id) return;
+
+    const photo = maintenanceEvidence.find((item) => item.slot === slot);
+    if (!photo) return;
+
+    if (!window.confirm(`Remove ${maintenanceEvidenceLabel(slot)} photo?`)) return;
+
+    setUploadingMaintenanceEvidenceSlot(slot);
+
+    try {
+      const { error } = await supabase.storage.from("asset-photos").remove([photo.path]);
+      if (error) throw error;
+      await loadMaintenanceEvidence(maintenanceForm.id);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Could not remove maintenance evidence.");
+    } finally {
+      setUploadingMaintenanceEvidenceSlot(null);
+    }
+  }
+
   function resetMaintenanceForm() {
+    setMaintenanceEvidence([]);
     setMaintenanceForm({
       ...EMPTY_MAINTENANCE_FORM,
       dateReported: new Date().toISOString().slice(0, 10),
@@ -4637,6 +4793,7 @@ locationLabels.set(normalizedLocation, displayLocation);
       repairDate: "",
       previousAssetStatus: asset.status || "In Use",
     });
+    setMaintenanceEvidence([]);
     setSelectedAssetId(asset.id);
     setActiveTab("maintenance");
     scrollToActiveContent("maintenance");
@@ -4727,6 +4884,7 @@ locationLabels.set(normalizedLocation, displayLocation);
       repairDate: record.repair_date || "",
       previousAssetStatus: record.previous_asset_status || "In Use",
     });
+    void loadMaintenanceEvidence(record.id);
     setActiveTab("maintenance");
     scrollToActiveContent("maintenance");
   }
@@ -7214,10 +7372,84 @@ locationLabels.set(normalizedLocation, displayLocation);
                       />
                     </div>
 
+                    <section className="rounded-2xl border border-cyan-200 bg-cyan-50/40 p-4">
+                      <div>
+                        <h4 className="font-bold text-slate-900">Maintenance / Job Evidence</h4>
+                        <p className="mt-1 text-xs text-slate-500">
+                          These photos belong to this maintenance ticket and will appear on the printed Maintenance Report.
+                          Asset passport photos will not be used as job-completion evidence.
+                        </p>
+                      </div>
+
+                      {!maintenanceForm.id ? (
+                        <div className="mt-4 rounded-xl border border-dashed border-cyan-300 bg-white p-4 text-sm text-slate-600">
+                          Save the ticket first. Then click Edit on the ticket to upload maintenance evidence.
+                        </div>
+                      ) : (
+                        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                          {(["before", "work", "completed"] as MaintenanceEvidenceSlot[]).map((slot) => {
+                            const photo = maintenanceEvidence.find((item) => item.slot === slot);
+                            const busy = uploadingMaintenanceEvidenceSlot === slot;
+
+                            return (
+                              <div key={slot} className="rounded-2xl border border-slate-200 bg-white p-3">
+                                <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-100">
+                                  {photo ? (
+                                    <img
+                                      src={photo.url}
+                                      alt={photo.label}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="grid h-full place-items-center px-3 text-center text-xs text-slate-400">
+                                      No {maintenanceEvidenceLabel(slot).toLowerCase()} photo
+                                    </div>
+                                  )}
+                                </div>
+
+                                <p className="mt-3 text-sm font-semibold text-slate-800">
+                                  {maintenanceEvidenceLabel(slot)}
+                                </p>
+
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <label className="cursor-pointer rounded-xl bg-cyan-700 px-3 py-2 text-xs font-semibold text-white">
+                                    {busy ? "Uploading..." : photo ? "Replace" : "Upload"}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      disabled={uploadingMaintenanceEvidenceSlot !== null}
+                                      onChange={(event) => {
+                                        const file = event.target.files?.[0];
+                                        if (file) void handleMaintenanceEvidenceUpload(file, slot);
+                                        event.currentTarget.value = "";
+                                      }}
+                                    />
+                                  </label>
+
+                                  {photo ? (
+                                    <button
+                                      type="button"
+                                      disabled={uploadingMaintenanceEvidenceSlot !== null}
+                                      onClick={() => void clearMaintenanceEvidence(slot)}
+                                      className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
+                                    >
+                                      Remove
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+
                     <div className="flex flex-wrap gap-3">
                       <button
                         type="submit"
-                        className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+                        disabled={savingMaintenance || uploadingMaintenanceEvidenceSlot !== null}
+                        className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {savingMaintenance ? "Saving..." : maintenanceForm.id ? "Update Ticket" : "Create Ticket"}
                       </button>
