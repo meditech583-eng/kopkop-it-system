@@ -57,6 +57,13 @@ type ITAsset = {
   purchase_date: string | null;
   warranty_expiry: string | null;
   notes: string | null;
+  // Electrical / solar load register fields (nameplate information, not measured demand)
+  power_rating_w: number | null;
+  voltage_v: number | null;
+  electrical_phase: string | null;
+  estimated_hours_per_day: number | null;
+  solar_load_relevant: boolean | null;
+  electrical_notes: string | null;
   os: string | null;
   ram: string | null;
   system_type: string | null;
@@ -295,6 +302,12 @@ type AssetFormState = {
   purchaseDate: string;
   warrantyExpiry: string;
   notes: string;
+  powerRatingW: string;
+  voltageV: string;
+  electricalPhase: string;
+  estimatedHoursPerDay: string;
+  solarLoadRelevant: boolean;
+  electricalNotes: string;
   os: string;
   ram: string;
   systemType: string;
@@ -365,6 +378,12 @@ const EMPTY_ASSET_FORM: AssetFormState = {
   purchaseDate: "",
   warrantyExpiry: "",
   notes: "",
+  powerRatingW: "",
+  voltageV: "",
+  electricalPhase: "",
+  estimatedHoursPerDay: "",
+  solarLoadRelevant: false,
+  electricalNotes: "",
   os: "",
   ram: "",
   systemType: "",
@@ -483,6 +502,17 @@ const DEVICE_CATEGORIES = [
   "External Storage",
   "Keyboard",
   "Mouse",
+  // Electrical equipment categories used for Admin Building / solar load documentation
+  "Air Conditioner",
+  "Fluorescent Light",
+  "LED Light",
+  "Refrigerator",
+  "Electric Kettle",
+  "Urn / Hot Water Dispenser",
+  "Microwave",
+  "Water Dispenser / Cooler",
+  "Photocopier",
+  "Electrical Appliance",
   "Other",
 ] as const;
 
@@ -5049,6 +5079,12 @@ locationLabels.set(normalizedLocation, displayLocation);
       purchaseDate: asset.purchase_date || "",
       warrantyExpiry: asset.warranty_expiry || "",
       notes: asset.notes || "",
+      powerRatingW: asset.power_rating_w != null ? String(asset.power_rating_w) : "",
+      voltageV: asset.voltage_v != null ? String(asset.voltage_v) : "",
+      electricalPhase: asset.electrical_phase || "",
+      estimatedHoursPerDay: asset.estimated_hours_per_day != null ? String(asset.estimated_hours_per_day) : "",
+      solarLoadRelevant: Boolean(asset.solar_load_relevant),
+      electricalNotes: asset.electrical_notes || "",
       os: asset.os || "",
       ram: asset.ram || "",
       systemType: asset.system_type || "",
@@ -5346,6 +5382,12 @@ locationLabels.set(normalizedLocation, displayLocation);
           purchaseDate: matchedAsset.purchase_date || "",
           warrantyExpiry: matchedAsset.warranty_expiry || "",
           notes: matchedAsset.notes || "",
+          powerRatingW: matchedAsset.power_rating_w != null ? String(matchedAsset.power_rating_w) : "",
+          voltageV: matchedAsset.voltage_v != null ? String(matchedAsset.voltage_v) : "",
+          electricalPhase: matchedAsset.electrical_phase || "",
+          estimatedHoursPerDay: matchedAsset.estimated_hours_per_day != null ? String(matchedAsset.estimated_hours_per_day) : "",
+          solarLoadRelevant: Boolean(matchedAsset.solar_load_relevant),
+          electricalNotes: matchedAsset.electrical_notes || "",
           os: matchedAsset.os || "",
           ram: matchedAsset.ram || "",
           systemType: matchedAsset.system_type || "",
@@ -5641,6 +5683,12 @@ locationLabels.set(normalizedLocation, displayLocation);
       purchase_date: assetForm.purchaseDate || null,
       warranty_expiry: assetForm.warrantyExpiry || null,
       notes: assetForm.notes.trim() || null,
+      power_rating_w: assetForm.powerRatingW.trim() ? safeNumber(assetForm.powerRatingW) : null,
+      voltage_v: assetForm.voltageV.trim() ? safeNumber(assetForm.voltageV) : null,
+      electrical_phase: assetForm.electricalPhase.trim() || null,
+      estimated_hours_per_day: assetForm.estimatedHoursPerDay.trim() ? safeNumber(assetForm.estimatedHoursPerDay) : null,
+      solar_load_relevant: assetForm.solarLoadRelevant,
+      electrical_notes: assetForm.electricalNotes.trim() || null,
       os: assetForm.os.trim() || null,
       ram: assetForm.ram.trim() || null,
       system_type: assetForm.systemType.trim() || null,
@@ -6226,6 +6274,70 @@ locationLabels.set(normalizedLocation, displayLocation);
     );
   }
 
+  function exportAdminElectricalLoadPdf() {
+    // This is an equipment/nameplate register for management and Comlek.
+    // It must not be described as an actual measured load assessment.
+    const loadAssets = [...enrichedAssets]
+      .filter((asset) => asset.solar_load_relevant)
+      .sort((a, b) => (a.location || "").localeCompare(b.location || "") || a.item_name.localeCompare(b.item_name));
+
+    const connectedLoadKw = loadAssets.reduce((total, asset) => {
+      const watts = Number(asset.power_rating_w || 0);
+      const qty = Math.max(1, Number(asset.quantity || 1));
+      return total + (watts * qty) / 1000;
+    }, 0);
+
+    const estimatedDailyKwh = loadAssets.reduce((total, asset) => {
+      const watts = Number(asset.power_rating_w || 0);
+      const qty = Math.max(1, Number(asset.quantity || 1));
+      const hours = Number(asset.estimated_hours_per_day || 0);
+      return total + (watts * qty * hours) / 1000;
+    }, 0);
+
+    const rows = loadAssets.map((asset) => `
+      <tr>
+        <td>${safeHtml(asset.asset_tag)}</td>
+        <td>${safeHtml(asset.item_name)}</td>
+        <td>${safeHtml(asset.category || "-")}</td>
+        <td>${safeHtml(asset.location || "-")}</td>
+        <td>${safeHtml(asset.brand || "-")} ${safeHtml(asset.model || "")}</td>
+        <td>${safeHtml(asset.quantity || 1)}</td>
+        <td>${asset.power_rating_w != null ? safeHtml(asset.power_rating_w) + " W" : "-"}</td>
+        <td>${asset.voltage_v != null ? safeHtml(asset.voltage_v) + " V" : "-"}</td>
+        <td>${safeHtml(asset.electrical_phase || "-")}</td>
+        <td>${asset.estimated_hours_per_day != null ? safeHtml(asset.estimated_hours_per_day) : "-"}</td>
+        <td>${safeHtml(asset.electrical_notes || asset.notes || "-")}</td>
+      </tr>
+    `).join("");
+
+    const content = `
+      <div class="grid">
+        <div class="card"><div class="label">Equipment Records</div><div class="value">${loadAssets.length}</div></div>
+        <div class="card"><div class="label">Connected Nameplate Load</div><div class="value">${connectedLoadKw.toFixed(2)} kW</div></div>
+        <div class="card"><div class="label">Simple Usage Estimate</div><div class="value">${estimatedDailyKwh.toFixed(2)} kWh/day</div></div>
+      </div>
+      <div class="section">
+        <h2>Admin Building Electrical Equipment / Solar Load Register</h2>
+        <p class="report-note"><strong>Important:</strong> This report is an asset and equipment register based on nameplate ratings and estimated operating hours. It is <strong>not</strong> a measured peak-demand, average-demand or daily-consumption load assessment. Comlek / a qualified electrician should provide the measured load assessment separately.</p>
+        <table>
+          <thead><tr>
+            <th>Asset Tag</th><th>Item</th><th>Category</th><th>Location</th><th>Brand / Model</th><th>Qty</th><th>Power</th><th>Voltage</th><th>Phase</th><th>Est. Hrs/Day</th><th>Notes</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="11">No equipment has been marked for the solar load report.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+
+    openPrintWindow(
+      "Admin Building Electrical Equipment / Solar Load Register",
+      buildPdfShell(
+        "Admin Building Electrical Equipment / Solar Load Register",
+        "Equipment register prepared to support the solar project review.",
+        content
+      )
+    );
+  }
+
   function exportInventoryPdf() {
     // Inventory PDF must always include the complete asset register.
     // The on-screen search and filters should not reduce the exported report.
@@ -6518,6 +6630,9 @@ locationLabels.set(normalizedLocation, displayLocation);
                 </button>
                 <button type="button" onClick={exportInventoryPdf} className="rounded-2xl bg-emerald-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-emerald-400">
                   <span className="mb-2 block text-xl">📦</span>Inventory PDF
+                </button>
+                <button type="button" onClick={exportAdminElectricalLoadPdf} className="rounded-2xl bg-amber-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-amber-400">
+                  <span className="mb-2 block text-xl">⚡</span>Admin Load Register
                 </button>
                 <button type="button" onClick={exportAlertsPdf} className="rounded-2xl bg-rose-500 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-rose-400">
                   <span className="mb-2 block text-xl">🚨</span>Alerts PDF
@@ -8632,7 +8747,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                           ? "Edit asset record"
                           : "Add new asset"
                   }
-                  subtitle="Register computers, projectors, printers, network equipment, CCTV devices and other ICT assets."
+                  subtitle="Register ICT assets and electrical equipment, including Admin Building items needed for solar load documentation."
                 />
 
                 <form onSubmit={handleSaveAsset} className="space-y-5">
@@ -8835,6 +8950,93 @@ locationLabels.set(normalizedLocation, displayLocation);
                           onChange={(e) => setAssetForm({ ...assetForm, warrantyExpiry: e.target.value })}
                         />
                       </label>
+                    </div>
+                  </section>
+
+                  <section className="rounded-3xl border border-amber-200 bg-amber-50/60 p-4">
+                    <div className="mb-4">
+                      <h3 className="font-bold text-slate-900">Electrical / Solar Load Information</h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        Record the equipment nameplate details for the Admin Building solar project.
+                        These values help document connected equipment, but they do not replace an electrician's measured load assessment.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-slate-600">Power Rating (W)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm"
+                          placeholder="e.g. 1500"
+                          value={assetForm.powerRatingW}
+                          onChange={(e) => setAssetForm({ ...assetForm, powerRatingW: e.target.value })}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-slate-600">Voltage (V)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm"
+                          placeholder="Read from equipment label"
+                          value={assetForm.voltageV}
+                          onChange={(e) => setAssetForm({ ...assetForm, voltageV: e.target.value })}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-slate-600">Electrical Phase</span>
+                        <select
+                          className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm"
+                          value={assetForm.electricalPhase}
+                          onChange={(e) => setAssetForm({ ...assetForm, electricalPhase: e.target.value })}
+                        >
+                          <option value="">Not recorded</option>
+                          <option value="Single Phase">Single Phase</option>
+                          <option value="Three Phase">Three Phase</option>
+                          <option value="DC">DC</option>
+                          <option value="Unknown">Unknown</option>
+                        </select>
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-slate-600">Estimated Hours Used Per Day</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="24"
+                          step="0.25"
+                          className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm"
+                          placeholder="e.g. 8"
+                          value={assetForm.estimatedHoursPerDay}
+                          onChange={(e) => setAssetForm({ ...assetForm, estimatedHoursPerDay: e.target.value })}
+                        />
+                      </label>
+
+                      <label className="sm:col-span-2 flex items-start gap-3 rounded-2xl border border-amber-200 bg-white p-4">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4"
+                          checked={assetForm.solarLoadRelevant}
+                          onChange={(e) => setAssetForm({ ...assetForm, solarLoadRelevant: e.target.checked })}
+                        />
+                        <span>
+                          <span className="block text-sm font-bold text-slate-800">Include in Admin Building solar load equipment report</span>
+                          <span className="mt-1 block text-xs text-slate-500">Tick this for equipment that should appear in the report prepared for management / Comlek.</span>
+                        </span>
+                      </label>
+
+                      <textarea
+                        className="min-h-24 rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm sm:col-span-2"
+                        placeholder="Electrical notes — label details, aircon capacity, normal usage, shared outlet, etc."
+                        value={assetForm.electricalNotes}
+                        onChange={(e) => setAssetForm({ ...assetForm, electricalNotes: e.target.value })}
+                      />
                     </div>
                   </section>
 
