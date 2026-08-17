@@ -6589,41 +6589,41 @@ locationLabels.set(normalizedLocation, displayLocation);
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#eef3f8] pb-32 text-slate-900 md:pb-0">
-      <div className="mx-auto w-full max-w-[1500px] px-2 py-3 sm:p-5 lg:p-7">
-        <header className="overflow-hidden rounded-2xl border border-slate-800/40 bg-[#071525] text-white shadow-[0_18px_45px_rgba(15,23,42,0.18)] sm:rounded-[30px] sm:shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
+    <div className="min-h-screen bg-[#eef3f8] pb-28 text-slate-900 md:pb-0">
+      <div className="mx-auto max-w-[1500px] p-3 sm:p-5 lg:p-7">
+        <header className="overflow-hidden rounded-[30px] border border-slate-800/40 bg-[#071525] text-white shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
           <div className="grid lg:grid-cols-[1fr_auto]">
-            <div className="relative overflow-hidden p-4 sm:p-8">
+            <div className="relative overflow-hidden p-6 sm:p-8">
               <div className="absolute -left-20 -top-24 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
               <div className="absolute bottom-0 right-0 h-48 w-48 rounded-full bg-emerald-400/10 blur-3xl" />
               <div className="relative">
-                <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/10 shadow-inner sm:h-14 sm:w-14">
-                    <img src="/kopkop-logo.png" alt="Kopkop College" className="h-9 w-9 object-contain sm:h-11 sm:w-11" />
+                <div className="flex items-center gap-4">
+                  <div className="grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/10 shadow-inner">
+                    <img src="/kopkop-logo.png" alt="Kopkop College" className="h-11 w-11 object-contain" />
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-300 sm:text-[11px] sm:tracking-[0.28em]">KOPKOP College</p>
-                    <p className="mt-1 truncate text-xs text-slate-400 sm:text-sm">ICT Operations & Asset Intelligence</p>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-cyan-300">KOPKOP College</p>
+                    <p className="mt-1 text-sm text-slate-400">ICT Operations & Asset Intelligence</p>
                   </div>
                 </div>
 
-                <div className="mt-5 max-w-3xl sm:mt-7">
+                <div className="mt-7 max-w-3xl">
                   <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                     <span className="h-2 w-2 rounded-full bg-emerald-400" />
                     Production System · Version 3.0
                   </div>
-                  <h1 className="mt-3 break-words text-2xl font-black leading-tight sm:mt-4 sm:text-5xl">
+                  <h1 className="mt-4 text-3xl font-black leading-tight sm:text-5xl">
                     Executive ICT Asset
                     <span className="block bg-gradient-to-r from-cyan-300 to-emerald-300 bg-clip-text text-transparent">
                       Management Dashboard
                     </span>
                   </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:mt-4 sm:text-base">
+                  <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
                     Live visibility across device health, maintenance, audits, asset distribution, QR operations and management reporting.
                   </p>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2 text-xs sm:mt-6">
+                <div className="mt-6 flex flex-wrap gap-2 text-xs">
                   <Badge text={`Last sync: ${lastSyncedAt || "Not synced yet"}`} className="border border-white/10 bg-white/10 text-white" />
                   <Badge text={`${stats.total} registered assets`} className="border border-white/10 bg-white/10 text-white" />
                   <Badge text={`${stats.avgScore}% average health`} className="border border-white/10 bg-white/10 text-white" />
@@ -6632,9 +6632,9 @@ locationLabels.set(normalizedLocation, displayLocation);
               </div>
             </div>
 
-            <div className="border-t border-white/10 bg-white/[0.035] p-4 sm:p-5 lg:w-[390px] lg:border-l lg:border-t-0">
+            <div className="border-t border-white/10 bg-white/[0.035] p-5 lg:w-[390px] lg:border-l lg:border-t-0">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Management actions</p>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <button type="button" onClick={exportSummaryPdf} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/15">
                   <span className="mb-2 block text-xl">📊</span>Summary PDF
                 </button>
@@ -6686,11 +6686,11 @@ locationLabels.set(normalizedLocation, displayLocation);
           ))}
         </div>
 
-        <div className="mt-3 grid gap-3 sm:mt-5 md:hidden">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:rounded-3xl">
+        <div className="mt-5 grid gap-3 md:hidden">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">Mobile Technician Mode</p>
             <h2 className="mt-1 text-xl font-black text-slate-900">Quick field actions</h2>
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <button type="button" onClick={() => openMobileTab("scan")} className="rounded-2xl bg-cyan-700 px-4 py-4 text-left text-sm font-bold text-white">
                 <span className="block text-2xl">📷</span>Scan Device
               </button>
@@ -7600,12 +7600,12 @@ locationLabels.set(normalizedLocation, displayLocation);
                         value={maintenanceSearch}
                         onChange={(e) => setMaintenanceSearch(e.target.value)}
                         placeholder="Search asset, issue, technician..."
-                        className="w-full min-w-0 rounded-xl border border-slate-200 px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                       />
                       <select
                         value={maintenanceStatusFilter}
                         onChange={(e) => setMaintenanceStatusFilter(e.target.value)}
-                        className="w-full min-w-0 rounded-xl border border-slate-200 px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 px-4 py-3 text-sm"
                       >
                         <option>All</option>
                         <option>Open</option>
@@ -7784,16 +7784,16 @@ locationLabels.set(normalizedLocation, displayLocation);
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.55fr_1fr]">
           <div className="space-y-6">
-            <div className="rounded-2xl bg-white p-4 shadow-sm sm:rounded-3xl sm:p-5">
+            <div className="rounded-3xl bg-white p-5 shadow-sm">
               <SectionTitle title="Search, filter, and review assets" subtitle="Find a device quickly and inspect its technical profile, performance, and current usage." />
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search asset tag, name, brand, user..."
-                  className="w-full min-w-0 rounded-xl border border-slate-200 px-3 py-3 text-base outline-none ring-0 sm:rounded-2xl sm:px-4 sm:text-sm"
+                  className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none ring-0"
                 />
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full min-w-0 rounded-xl border border-slate-200 px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm">
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
                   <option>All</option>
                   <option>In Use</option>
                   <option>In Store</option>
@@ -7817,10 +7817,10 @@ locationLabels.set(normalizedLocation, displayLocation);
             </div>
 
             {(activeTab === "dashboard" || activeTab === "inventory" || activeTab === "profile" || activeTab === "scan" || activeTab === "discovery" || activeTab === "labels") && (
-              <div id="tab-inventory" className="scroll-mt-24 rounded-2xl bg-white p-3 shadow-sm sm:rounded-3xl sm:p-5">
+              <div id="tab-inventory" className="scroll-mt-24 rounded-3xl bg-white p-5 shadow-sm">
                 <SectionTitle title="Inventory overview" subtitle="Select a device to review its specs, condition, update status, and recommendation." />
-                <div className="overflow-hidden rounded-2xl border border-slate-200 sm:rounded-3xl">
-                  <div className="grid gap-3 p-2 sm:p-4 md:hidden">
+                <div className="overflow-hidden rounded-3xl border border-slate-200">
+                  <div className="grid gap-4 p-4 md:hidden">
                     {filteredAssets.map((asset) => (
                       <MobileAssetCard
                         key={asset.id}
@@ -8761,7 +8761,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                 />
 
                 <form onSubmit={handleSaveAsset} className="space-y-5">
-                  <section className="overflow-hidden rounded-2xl sm:rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50">
+                  <section className="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50">
                     <div className="p-4">
                       <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700">
                         Automatic device discovery
@@ -8823,7 +8823,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                     </div>
                   </section>
 
-                  <section className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                  <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-4">
                       <h3 className="font-bold text-slate-900">Basic Asset Information</h3>
                       <p className="mt-1 text-xs text-slate-500">
@@ -8831,9 +8831,9 @@ locationLabels.set(normalizedLocation, displayLocation);
                       </p>
                     </div>
 
-                    <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Asset Tag"
                         value={assetForm.assetTag}
                         onChange={(e) => setAssetForm({ ...assetForm, assetTag: e.target.value })}
@@ -8841,7 +8841,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                       />
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Device / Item Name"
                         value={assetForm.itemName}
                         onChange={(e) => setAssetForm({ ...assetForm, itemName: e.target.value })}
@@ -8850,7 +8850,7 @@ locationLabels.set(normalizedLocation, displayLocation);
 
                       <div className="space-y-2">
                         <select
-                          className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                           value={
                             assetCategoryOptions.includes(assetForm.category)
                               ? assetForm.category
@@ -8876,7 +8876,7 @@ locationLabels.set(normalizedLocation, displayLocation);
 
                         {!assetCategoryOptions.includes(assetForm.category) ? (
                           <input
-                            className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                             placeholder="Type new device category"
                             value={assetForm.category}
                             onChange={(e) =>
@@ -8888,42 +8888,42 @@ locationLabels.set(normalizedLocation, displayLocation);
                       </div>
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Assigned To"
                         value={assetForm.assignedTo}
                         onChange={(e) => setAssetForm({ ...assetForm, assignedTo: e.target.value })}
                       />
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Brand"
                         value={assetForm.brand}
                         onChange={(e) => setAssetForm({ ...assetForm, brand: e.target.value })}
                       />
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Model"
                         value={assetForm.model}
                         onChange={(e) => setAssetForm({ ...assetForm, model: e.target.value })}
                       />
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Serial Number"
                         value={assetForm.serialNumber}
                         onChange={(e) => setAssetForm({ ...assetForm, serialNumber: e.target.value })}
                       />
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Location / Department"
                         value={assetForm.location}
                         onChange={(e) => setAssetForm({ ...assetForm, location: e.target.value })}
                       />
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Quantity"
                         inputMode="numeric"
                         value={assetForm.quantity}
@@ -8931,14 +8931,14 @@ locationLabels.set(normalizedLocation, displayLocation);
                       />
 
                       <input
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         placeholder="Supplier"
                         value={assetForm.supplier}
                         onChange={(e) => setAssetForm({ ...assetForm, supplier: e.target.value })}
                       />
 
                       <select
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         value={assetForm.condition}
                         onChange={(e) =>
                           setAssetForm({ ...assetForm, condition: e.target.value as AssetCondition })
@@ -8950,7 +8950,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                       </select>
 
                       <select
-                        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                         value={assetForm.status}
                         onChange={(e) =>
                           setAssetForm({ ...assetForm, status: e.target.value as AssetStatus })
@@ -8968,7 +8968,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                         <span className="text-xs font-medium text-slate-500">Purchase Date</span>
                         <input
                           type="date"
-                          className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                           value={assetForm.purchaseDate}
                           onChange={(e) => setAssetForm({ ...assetForm, purchaseDate: e.target.value })}
                         />
@@ -8978,7 +8978,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                         <span className="text-xs font-medium text-slate-500">Warranty Expiry</span>
                         <input
                           type="date"
-                          className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm"
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
                           value={assetForm.warrantyExpiry}
                           onChange={(e) => setAssetForm({ ...assetForm, warrantyExpiry: e.target.value })}
                         />
@@ -8986,7 +8986,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                     </div>
                   </section>
 
-                  <section className="rounded-2xl sm:rounded-3xl border border-amber-200 bg-amber-50/60 p-4">
+                  <section className="rounded-3xl border border-amber-200 bg-amber-50/60 p-4">
                     <div className="mb-4">
                       <h3 className="font-bold text-slate-900">Electrical / Solar Load Information</h3>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
@@ -8995,7 +8995,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                       </p>
                     </div>
 
-                    <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <label className="space-y-1">
                         <span className="text-xs font-medium text-slate-600">Power Rating (W)</span>
                         <input
@@ -9065,7 +9065,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                       </label>
 
                       <textarea
-                        className="min-h-24 w-full min-w-0 rounded-xl border border-amber-200 bg-white px-3 py-3 text-base sm:col-span-2 sm:rounded-2xl sm:px-4 sm:text-sm"
+                        className="min-h-24 rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm sm:col-span-2"
                         placeholder="Electrical notes — label details, aircon capacity, normal usage, shared outlet, etc."
                         value={assetForm.electricalNotes}
                         onChange={(e) => setAssetForm({ ...assetForm, electricalNotes: e.target.value })}
@@ -9074,7 +9074,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                   </section>
 
                   {isComputerAsset && (
-                    <section className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                       <div className="mb-4">
                         <h3 className="font-bold text-slate-900">Computer Specifications</h3>
                         <p className="mt-1 text-xs text-slate-500">
@@ -9082,24 +9082,24 @@ locationLabels.set(normalizedLocation, displayLocation);
                         </p>
                       </div>
 
-                      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Operating System" value={assetForm.os} onChange={(e) => setAssetForm({ ...assetForm, os: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="RAM" value={assetForm.ram} onChange={(e) => setAssetForm({ ...assetForm, ram: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="System Type" value={assetForm.systemType} onChange={(e) => setAssetForm({ ...assetForm, systemType: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Microsoft Office" value={assetForm.msOffice} onChange={(e) => setAssetForm({ ...assetForm, msOffice: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Storage" value={assetForm.storage} onChange={(e) => setAssetForm({ ...assetForm, storage: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="CPU / Processor" value={assetForm.processor} onChange={(e) => setAssetForm({ ...assetForm, processor: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="GPU / Graphics" value={assetForm.gpu} onChange={(e) => setAssetForm({ ...assetForm, gpu: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Motherboard" value={assetForm.motherboard} onChange={(e) => setAssetForm({ ...assetForm, motherboard: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="BIOS Version" value={assetForm.biosVersion} onChange={(e) => setAssetForm({ ...assetForm, biosVersion: e.target.value })} />
-                        <input type="date" className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" value={assetForm.biosDate} onChange={(e) => setAssetForm({ ...assetForm, biosDate: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="TPM Status" value={assetForm.tpmStatus} onChange={(e) => setAssetForm({ ...assetForm, tpmStatus: e.target.value })} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Operating System" value={assetForm.os} onChange={(e) => setAssetForm({ ...assetForm, os: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="RAM" value={assetForm.ram} onChange={(e) => setAssetForm({ ...assetForm, ram: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="System Type" value={assetForm.systemType} onChange={(e) => setAssetForm({ ...assetForm, systemType: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Microsoft Office" value={assetForm.msOffice} onChange={(e) => setAssetForm({ ...assetForm, msOffice: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Storage" value={assetForm.storage} onChange={(e) => setAssetForm({ ...assetForm, storage: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="CPU / Processor" value={assetForm.processor} onChange={(e) => setAssetForm({ ...assetForm, processor: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="GPU / Graphics" value={assetForm.gpu} onChange={(e) => setAssetForm({ ...assetForm, gpu: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Motherboard" value={assetForm.motherboard} onChange={(e) => setAssetForm({ ...assetForm, motherboard: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="BIOS Version" value={assetForm.biosVersion} onChange={(e) => setAssetForm({ ...assetForm, biosVersion: e.target.value })} />
+                        <input type="date" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" value={assetForm.biosDate} onChange={(e) => setAssetForm({ ...assetForm, biosDate: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="TPM Status" value={assetForm.tpmStatus} onChange={(e) => setAssetForm({ ...assetForm, tpmStatus: e.target.value })} />
                       </div>
                     </section>
                   )}
 
                   {showsComputerAccessories && (
-                    <section className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                       <div className="mb-4">
                         <h3 className="font-bold text-slate-900">Included Accessories</h3>
                         <p className="mt-1 text-xs text-slate-500">
@@ -9107,18 +9107,18 @@ locationLabels.set(normalizedLocation, displayLocation);
                         </p>
                       </div>
 
-                      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Monitor" value={assetForm.monitor} onChange={(e) => setAssetForm({ ...assetForm, monitor: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Keyboard" value={assetForm.keyboard} onChange={(e) => setAssetForm({ ...assetForm, keyboard: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Mouse" value={assetForm.mouse} onChange={(e) => setAssetForm({ ...assetForm, mouse: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Charger / Power Adapter" value={assetForm.charger} onChange={(e) => setAssetForm({ ...assetForm, charger: e.target.value })} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Monitor" value={assetForm.monitor} onChange={(e) => setAssetForm({ ...assetForm, monitor: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Keyboard" value={assetForm.keyboard} onChange={(e) => setAssetForm({ ...assetForm, keyboard: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Mouse" value={assetForm.mouse} onChange={(e) => setAssetForm({ ...assetForm, mouse: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Charger / Power Adapter" value={assetForm.charger} onChange={(e) => setAssetForm({ ...assetForm, charger: e.target.value })} />
                         <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm sm:col-span-2" placeholder="Headset or other included accessory" value={assetForm.headset} onChange={(e) => setAssetForm({ ...assetForm, headset: e.target.value })} />
                       </div>
                     </section>
                   )}
 
                   {isNetworkAsset && (
-                    <section className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                       <div className="mb-4">
                         <h3 className="font-bold text-slate-900">Network Information</h3>
                         <p className="mt-1 text-xs text-slate-500">
@@ -9126,18 +9126,18 @@ locationLabels.set(normalizedLocation, displayLocation);
                         </p>
                       </div>
 
-                      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Connection Type" value={assetForm.connectionType} onChange={(e) => setAssetForm({ ...assetForm, connectionType: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Hostname / Device Name" value={assetForm.hostname} onChange={(e) => setAssetForm({ ...assetForm, hostname: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="IP Address" value={assetForm.ipAddress} onChange={(e) => setAssetForm({ ...assetForm, ipAddress: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="MAC Address" value={assetForm.macAddress} onChange={(e) => setAssetForm({ ...assetForm, macAddress: e.target.value })} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Connection Type" value={assetForm.connectionType} onChange={(e) => setAssetForm({ ...assetForm, connectionType: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Hostname / Device Name" value={assetForm.hostname} onChange={(e) => setAssetForm({ ...assetForm, hostname: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="IP Address" value={assetForm.ipAddress} onChange={(e) => setAssetForm({ ...assetForm, ipAddress: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="MAC Address" value={assetForm.macAddress} onChange={(e) => setAssetForm({ ...assetForm, macAddress: e.target.value })} />
                         <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm sm:col-span-2" placeholder="Online Status" value={assetForm.onlineStatus} onChange={(e) => setAssetForm({ ...assetForm, onlineStatus: e.target.value })} />
                       </div>
                     </section>
                   )}
 
                   {showsPerformanceChecks && (
-                    <section className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                       <div className="mb-4">
                         <h3 className="font-bold text-slate-900">Performance Check</h3>
                         <p className="mt-1 text-xs text-slate-500">
@@ -9145,16 +9145,16 @@ locationLabels.set(normalizedLocation, displayLocation);
                         </p>
                       </div>
 
-                      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Windows Update Status" value={assetForm.windowsUpdate} onChange={(e) => setAssetForm({ ...assetForm, windowsUpdate: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Desktop Loading Speed" value={assetForm.desktopLoadingSpeed} onChange={(e) => setAssetForm({ ...assetForm, desktopLoadingSpeed: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Booting Speed" value={assetForm.bootingSpeed} onChange={(e) => setAssetForm({ ...assetForm, bootingSpeed: e.target.value })} />
-                        <input className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-base sm:rounded-2xl sm:px-4 sm:text-sm" placeholder="Overall Performance" value={assetForm.performance} onChange={(e) => setAssetForm({ ...assetForm, performance: e.target.value })} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Windows Update Status" value={assetForm.windowsUpdate} onChange={(e) => setAssetForm({ ...assetForm, windowsUpdate: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Desktop Loading Speed" value={assetForm.desktopLoadingSpeed} onChange={(e) => setAssetForm({ ...assetForm, desktopLoadingSpeed: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Booting Speed" value={assetForm.bootingSpeed} onChange={(e) => setAssetForm({ ...assetForm, bootingSpeed: e.target.value })} />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" placeholder="Overall Performance" value={assetForm.performance} onChange={(e) => setAssetForm({ ...assetForm, performance: e.target.value })} />
                       </div>
                     </section>
                   )}
 
-                  <section className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                  <section className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-4">
                       <h3 className="font-bold text-slate-900">Device Photos</h3>
                       <p className="mt-1 text-xs text-slate-500">
@@ -9303,8 +9303,8 @@ locationLabels.set(normalizedLocation, displayLocation);
       </div>
 
       {printMode && selectedAsset && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black bg-opacity-50 p-0 sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full overflow-auto rounded-t-3xl bg-white p-4 shadow-2xl sm:max-h-[90vh] sm:max-w-4xl sm:rounded-3xl sm:p-8 print:m-0 print:max-h-none print:max-w-none print:overflow-visible print:shadow-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="max-h-[90vh] max-w-4xl overflow-auto rounded-3xl bg-white p-8 shadow-2xl print:m-0 print:max-h-none print:max-w-none print:overflow-visible print:shadow-none">
             <div className="mb-8 border-b-2 border-slate-200 pb-6 print:mb-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -9473,13 +9473,13 @@ locationLabels.set(normalizedLocation, displayLocation);
       <button
         type="button"
         onClick={() => openMobileTab("scan")}
-        className="fixed bottom-24 right-3 z-40 grid h-14 w-14 place-items-center rounded-full bg-cyan-700 text-xl text-white shadow-xl md:hidden print:hidden"
+        className="fixed bottom-24 right-4 z-40 grid h-16 w-16 place-items-center rounded-full bg-cyan-700 text-2xl text-white shadow-2xl md:hidden print:hidden"
         aria-label="Open scanner"
       >
         📷
       </button>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur md:hidden print:hidden" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur md:hidden print:hidden">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
           {[
             ["dashboard", "🏠", "Home"],
@@ -9492,7 +9492,7 @@ locationLabels.set(normalizedLocation, displayLocation);
               key={key}
               type="button"
               onClick={() => openMobileTab(key as typeof activeTab)}
-              className={`min-w-0 rounded-xl px-1.5 py-2 text-center text-[10px] font-bold sm:rounded-2xl sm:px-2 sm:text-[11px] ${
+              className={`rounded-2xl px-2 py-2 text-center text-[11px] font-bold ${
                 activeTab === key ? "bg-slate-900 text-white" : "text-slate-600"
               }`}
             >
