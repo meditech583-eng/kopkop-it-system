@@ -6323,12 +6323,12 @@ locationLabels.set(normalizedLocation, displayLocation);
     const content = `
       <div class="grid">
         <div class="card"><div class="label">Equipment Records</div><div class="value">${loadAssets.length}</div></div>
-        <div class="card"><div class="label">Connected Nameplate Load</div><div class="value">${connectedLoadKw.toFixed(2)} kW</div></div>
-        <div class="card"><div class="label">Simple Usage Estimate</div><div class="value">${estimatedDailyKwh.toFixed(2)} kWh/day</div></div>
+        <div class="card"><div class="label">Known Nameplate Load</div><div class="value">${connectedLoadKw.toFixed(2)} kW</div></div>
+        <div class="card"><div class="label">Estimated Energy from Recorded Loads</div><div class="value">${estimatedDailyKwh.toFixed(2)} kWh/day</div></div>
       </div>
       <div class="section">
         <h2>Admin Building Electrical Equipment / Solar Load Register</h2>
-        <p class="report-note"><strong>Important:</strong> This report is an asset and equipment register based on nameplate ratings and estimated operating hours. It is <strong>not</strong> a measured peak-demand, average-demand or daily-consumption load assessment. Comlek / a qualified electrician should provide the measured load assessment separately.</p>
+        <p class="report-note"><strong>Important:</strong> This report records electrical equipment identified as currently operating in the Admin Building area, using available nameplate information and estimated operating hours. The figures shown include only equipment with recorded power ratings and therefore do <strong>not</strong> represent the total or measured building load. This is <strong>not</strong> a measured peak-demand, average-demand or daily-consumption load assessment. Comlek / a qualified electrician should provide the measured load assessment separately.</p>
         <table>
           <thead><tr>
             <th>Asset Tag</th><th>Item</th><th>Category</th><th>Location</th><th>Brand / Model</th><th>Qty</th><th>Power</th><th>Voltage</th><th>Phase</th><th>Est. Hrs/Day</th><th>Notes</th>
