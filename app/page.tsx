@@ -342,13 +342,8 @@ type AuditFormState = {
   assetId: string;
   inspectedBy: string;
   inspectionDate: string;
-  division: string;
-  department: string;
-  officeArea: string;
-  assignedRole: string;
   priorityLevel: PriorityLevel;
   finalStatus: FinalStatus;
-  healthScore: string;
   issueDetected: boolean;
   remarks: string;
 };
@@ -418,13 +413,8 @@ const EMPTY_AUDIT_FORM: AuditFormState = {
   assetId: "",
   inspectedBy: "",
   inspectionDate: new Date().toISOString().slice(0, 10),
-  division: "",
-  department: "",
-  officeArea: "",
-  assignedRole: "",
   priorityLevel: "Low",
   finalStatus: "Operational",
-  healthScore: "100",
   issueDetected: false,
   remarks: "",
 };
@@ -515,20 +505,6 @@ const DEVICE_CATEGORIES = [
   "Electrical Appliance",
   "Other",
 ] as const;
-
-const DIVISIONS = [
-  "KOPKOP College Admin Team",
-  "Primary School",
-  "Secondary School",
-  "SOLI (School of Learning & Innovation)",
-] as const;
-
-const DEPARTMENTS_BY_DIVISION: Record<string, string[]> = {
-  "KOPKOP College Admin Team": ["Admin Office", "IT Department", "Finance Department", "HR Department"],
-  "Primary School": ["Senior School", "Middle School", "Junior School", "ECCE", "Primary Staff Room", "Primary IT Lab"],
-  "Secondary School": ["Academic", "LSS School", "Secondary Staff Room", "Secondary IT Lab"],
-  "SOLI (School of Learning & Innovation)": ["Grade 11", "Grade 12"],
-};
 
 function formatDate(value?: string | null) {
   if (!value) return "-";
@@ -652,6 +628,30 @@ function inferHealthScore(asset: ITAsset) {
   if (condition === "fair") score -= 10;
 
   return Math.max(0, Math.min(100, score));
+}
+
+// Quick Audit does not ask the technician to guess a percentage.
+// It starts with the inventory/device telemetry score and then applies
+// the verified physical inspection findings recorded during the audit.
+function calculateAuditHealthScore(
+  asset: ITAsset,
+  audit: Pick<AuditFormState, "issueDetected" | "priorityLevel" | "finalStatus">
+) {
+  let score = inferHealthScore(asset);
+
+  if (audit.issueDetected) score -= 10;
+
+  // Final inspection status places a sensible ceiling on the score.
+  if (audit.finalStatus === "Needs Minor Repair") score = Math.min(score, 75);
+  if (audit.finalStatus === "Needs Major Repair") score = Math.min(score, 45);
+  if (audit.finalStatus === "Out of Service") score = Math.min(score, 20);
+
+  // Priority reflects the technician's verified level of concern.
+  if (audit.priorityLevel === "Medium") score = Math.min(score, 85);
+  if (audit.priorityLevel === "High") score = Math.min(score, 60);
+  if (audit.priorityLevel === "Critical") score = Math.min(score, 35);
+
+  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 function getHealthLabel(score: number): EnrichedAsset["healthLabel"] {
@@ -4110,10 +4110,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                 <div class="asset-row"><strong>Inspection Date:</strong><span>${safeHtml(formatDate(check.inspection_date))}</span></div>
                 <div class="asset-row"><strong>Inspected By:</strong><span>${safeHtml(check.inspected_by || "-")}</span></div>
                 <div class="asset-row"><strong>Assigned User:</strong><span>${safeHtml(check.assigned_to || relatedAsset?.assigned_to || "-")}</span></div>
-                <div class="asset-row"><strong>Division:</strong><span>${safeHtml(check.division || "-")}</span></div>
-                <div class="asset-row"><strong>Department:</strong><span>${safeHtml(check.department || "-")}</span></div>
-                <div class="asset-row"><strong>Office / Area:</strong><span>${safeHtml(check.office_area || check.location || relatedAsset?.location || "-")}</span></div>
-                <div class="asset-row"><strong>Assigned Role:</strong><span>${safeHtml(check.assigned_role || "-")}</span></div>
+                <div class="asset-row"><strong>Location:</strong><span>${safeHtml(check.office_area || check.location || relatedAsset?.location || "-")}</span></div>
               </div>
             </section>
 
@@ -5037,6 +5034,15 @@ locationLabels.set(normalizedLocation, displayLocation);
 
       await syncAssetStatusForMaintenance(record.asset_id, status, record.previous_asset_status);
       await refreshAll(false);
+
+      if (
+        status === "Completed" &&
+        (record.priority === "High" || record.priority === "Critical" || hasCriticalDeviceFailure(record))
+      ) {
+        alert(
+          "Maintenance completed. Because this was a major/critical repair, perform a Quick Audit after testing the device to record its new verified health score."
+        );
+      }
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Failed to update maintenance status");
@@ -5834,13 +5840,8 @@ locationLabels.set(normalizedLocation, displayLocation);
       assetId: String(asset.id),
       inspectedBy: "",
       inspectionDate: new Date().toISOString().slice(0, 10),
-      division: "",
-      department: asset.location || "",
-      officeArea: asset.location || "",
-      assignedRole: asset.assigned_to || "",
       priorityLevel: latest?.priority_level || "Low",
       finalStatus: latest?.final_status || "Operational",
-      healthScore: String(latest?.health_score ?? inferHealthScore(asset)),
       issueDetected: Boolean(latest?.issue_detected),
       remarks: "",
     });
@@ -5862,6 +5863,8 @@ locationLabels.set(normalizedLocation, displayLocation);
       return;
     }
 
+    const calculatedHealthScore = calculateAuditHealthScore(asset, auditForm);
+
     setSavingAudit(true);
     try {
       const payload = {
@@ -5873,14 +5876,16 @@ locationLabels.set(normalizedLocation, displayLocation);
         assigned_to: asset.assigned_to,
         inspected_by: auditForm.inspectedBy.trim(),
         inspection_date: auditForm.inspectionDate,
-        division: auditForm.division || null,
-        department: auditForm.department || null,
-        office_area: auditForm.officeArea || null,
-        assigned_role: auditForm.assignedRole || null,
+        // Quick Audit location/assignment comes from Inventory automatically.
+        // Legacy columns remain null so no database migration is required.
+        division: null,
+        department: null,
+        office_area: asset.location,
+        assigned_role: null,
         issue_detected: auditForm.issueDetected,
         priority_level: auditForm.priorityLevel,
         final_status: auditForm.finalStatus,
-        health_score: safeNumber(auditForm.healthScore),
+        health_score: calculatedHealthScore,
         remarks: auditForm.remarks.trim() || null,
       };
       const { error } = await supabase.from("device_status_checks").insert([payload]);
@@ -5888,7 +5893,7 @@ locationLabels.set(normalizedLocation, displayLocation);
 
       const autoTriggered = await ensureAutoMaintenanceTicket(
         asset,
-        safeNumber(auditForm.healthScore),
+        calculatedHealthScore,
         auditForm.remarks
       );
 
@@ -9256,7 +9261,7 @@ locationLabels.set(normalizedLocation, displayLocation);
 
             {activeTab === "audit" && (
               <div id="tab-audit" className="scroll-mt-24 rounded-3xl bg-white p-5 shadow-sm">
-                <SectionTitle title="Quick audit form" subtitle="Save an audit result for the selected asset." />
+                <SectionTitle title="Quick audit form" subtitle="Record a verified physical inspection. The health score is calculated automatically from asset data and your inspection findings." />
                 <form onSubmit={handleSaveAudit} className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.assetId} onChange={(e) => setAuditForm({ ...auditForm, assetId: e.target.value })}>
@@ -9267,25 +9272,52 @@ locationLabels.set(normalizedLocation, displayLocation);
                     </select>
                     <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Inspected By" value={auditForm.inspectedBy} onChange={(e) => setAuditForm({ ...auditForm, inspectedBy: e.target.value })} />
                     <input type="date" className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.inspectionDate} onChange={(e) => setAuditForm({ ...auditForm, inspectionDate: e.target.value })} />
-                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.division} onChange={(e) => setAuditForm({ ...auditForm, division: e.target.value, department: "" })}>
-                      <option value="">Select Division</option>
-                      {DIVISIONS.map((division) => <option key={division} value={division}>{division}</option>)}
-                    </select>
-                    <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.department} onChange={(e) => setAuditForm({ ...auditForm, department: e.target.value })}>
-                      <option value="">Select Department</option>
-                      {(DEPARTMENTS_BY_DIVISION[auditForm.division] || []).map((department) => (
-                        <option key={department} value={department}>{department}</option>
-                      ))}
-                    </select>
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Office / Area" value={auditForm.officeArea} onChange={(e) => setAuditForm({ ...auditForm, officeArea: e.target.value })} />
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Assigned Role" value={auditForm.assignedRole} onChange={(e) => setAuditForm({ ...auditForm, assignedRole: e.target.value })} />
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 sm:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Inventory Location & Assignment
+                      </p>
+                      {(() => {
+                        const auditAsset = assets.find((asset) => asset.id === Number(auditForm.assetId));
+                        if (!auditAsset) {
+                          return (
+                            <p className="mt-1 text-sm text-slate-500">
+                              Select an asset to view its recorded location and assigned user.
+                            </p>
+                          );
+                        }
+
+                        return (
+                          <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                            <div>
+                              <span className="font-semibold text-slate-700">Location: </span>
+                              <span className="text-slate-600">{auditAsset.location || "Not recorded"}</span>
+                            </div>
+                            <div>
+                              <span className="font-semibold text-slate-700">Assigned to: </span>
+                              <span className="text-slate-600">{auditAsset.assigned_to || "Not assigned"}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                     <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.priorityLevel} onChange={(e) => setAuditForm({ ...auditForm, priorityLevel: e.target.value as PriorityLevel })}>
                       <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
                     </select>
                     <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" value={auditForm.finalStatus} onChange={(e) => setAuditForm({ ...auditForm, finalStatus: e.target.value as FinalStatus })}>
                       <option>Operational</option><option>Needs Minor Repair</option><option>Needs Major Repair</option><option>Out of Service</option>
                     </select>
-                    <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm" placeholder="Health Score" value={auditForm.healthScore} onChange={(e) => setAuditForm({ ...auditForm, healthScore: e.target.value })} />
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Calculated Health Score</p>
+                      <div className="mt-1 flex items-center justify-between gap-3">
+                        <span className="text-2xl font-black text-slate-900">
+                          {(() => {
+                            const auditAsset = assets.find((asset) => asset.id === Number(auditForm.assetId));
+                            return auditAsset ? `${calculateAuditHealthScore(auditAsset, auditForm)}%` : "--";
+                          })()}
+                        </span>
+                        <span className="text-xs text-slate-600">Auto-calculated from asset data + inspection findings</span>
+                      </div>
+                    </div>
                     <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
                       <input type="checkbox" checked={auditForm.issueDetected} onChange={(e) => setAuditForm({ ...auditForm, issueDetected: e.target.checked })} />
                       Issue detected
