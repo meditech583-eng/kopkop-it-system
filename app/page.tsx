@@ -4926,6 +4926,63 @@ locationLabels.set(normalizedLocation, displayLocation);
     scrollToActiveContent("maintenance");
   }
 
+  function createRecurringFault(record: MaintenanceRecord) {
+    if (!isAdmin) {
+      alert("Only admin users can create recurring-fault tickets.");
+      return;
+    }
+
+    if (record.status !== "Completed") {
+      alert("Recurring Fault is intended for a problem that returned after a completed repair.");
+      return;
+    }
+
+    const relatedAsset = record.asset_id
+      ? enrichedAssets.find((asset) => asset.id === record.asset_id)
+      : null;
+
+    const previousReference = `Recurring fault from completed maintenance record #${record.id}.`;
+    const previousResolution = record.resolution_notes
+      ? ` Previous resolution: ${record.resolution_notes}`
+      : "";
+    const previousAction = record.action_taken
+      ? ` Previous action: ${record.action_taken}`
+      : "";
+
+    setMaintenanceEvidence([]);
+    setMaintenanceForm({
+      id: null,
+      assetId: record.asset_id ? String(record.asset_id) : "",
+      assetTag: record.asset_tag || relatedAsset?.asset_tag || "",
+      itemName: record.item_name || relatedAsset?.item_name || "",
+      issue: record.issue
+        ? `Recurring fault: ${record.issue}`
+        : "Recurring fault - describe the issue",
+      priority: record.priority || "Medium",
+      status: "Open",
+      assignedTo: record.assigned_to || relatedAsset?.assigned_to || "",
+      reportedBy: "IT Staff",
+      technician: "",
+      notes: `${previousReference}${previousAction}${previousResolution}`,
+      actionTaken: "",
+      resolutionNotes: "",
+      dateReported: new Date().toISOString().slice(0, 10),
+      repairDate: "",
+      previousAssetStatus: relatedAsset?.status || record.previous_asset_status || "In Use",
+    });
+
+    setSelectedAssetId(record.asset_id || null);
+    setActiveTab("maintenance");
+    scrollToActiveContent("maintenance");
+
+    window.setTimeout(() => {
+      document.getElementById("maintenance-ticket-form")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 250);
+  }
+
   async function handleSaveMaintenance(e: React.FormEvent) {
     e.preventDefault();
 
@@ -4937,6 +4994,23 @@ locationLabels.set(normalizedLocation, displayLocation);
     if (!maintenanceForm.assetId || !maintenanceForm.issue.trim()) {
       alert("Please select an asset and enter the issue.");
       return;
+    }
+
+    if (maintenanceForm.id) {
+      const originalRecord = maintenanceRecords.find((record) => record.id === maintenanceForm.id);
+      const originalClosed =
+        originalRecord?.status === "Completed" || originalRecord?.status === "Cancelled";
+      const tryingToReopen =
+        maintenanceForm.status !== "Completed" && maintenanceForm.status !== "Cancelled";
+
+      if (originalClosed && tryingToReopen) {
+        alert(
+          originalRecord?.status === "Completed"
+            ? "A completed ticket cannot be reopened. Use Recurring Fault to create a new linked maintenance event."
+            : "A cancelled ticket cannot be reopened. Create a new maintenance ticket instead."
+        );
+        return;
+      }
     }
 
     setSavingMaintenance(true);
@@ -4985,6 +5059,18 @@ locationLabels.set(normalizedLocation, displayLocation);
   async function updateMaintenanceStatus(record: MaintenanceRecord, status: MaintenanceStatus) {
     if (!isAdmin) {
       alert("Only admin users can update maintenance status.");
+      return;
+    }
+
+    if (
+      (record.status === "Completed" || record.status === "Cancelled") &&
+      status !== record.status
+    ) {
+      alert(
+        record.status === "Completed"
+          ? "This ticket is already completed. If the fault returned, use Recurring Fault to create a new ticket."
+          : "This ticket is cancelled. Create a new maintenance ticket instead of reopening it."
+      );
       return;
     }
 
@@ -6900,7 +6986,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                           <p className="truncate text-sm font-black text-slate-900">{asset.asset_tag} · {asset.item_name}</p>
                           <p className="mt-1 truncate text-xs text-slate-500">{asset.location || "No location"} · {asset.recommendation}</p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 sm:gap-2">
                           <HealthIndicator score={asset.displayScore} />
                           <OperationalIndicator status={asset.operationalStatus} />
                         </div>
@@ -7337,7 +7423,7 @@ locationLabels.set(normalizedLocation, displayLocation);
               </div>
 
               <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-                <div className="rounded-3xl border border-slate-200 p-5">
+                <div id="maintenance-ticket-form" className="scroll-mt-24 rounded-3xl border border-slate-200 p-5">
                   <h3 className="text-lg font-bold text-slate-900">
                     {maintenanceForm.id ? "Edit maintenance ticket" : "Create maintenance ticket"}
                   </h3>
@@ -7395,8 +7481,12 @@ locationLabels.set(normalizedLocation, displayLocation);
                         <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
                         <select
                           value={maintenanceForm.status}
+                          disabled={
+                            Boolean(maintenanceForm.id) &&
+                            (maintenanceForm.status === "Completed" || maintenanceForm.status === "Cancelled")
+                          }
                           onChange={(e) => setMaintenanceForm((prev) => ({ ...prev, status: e.target.value as MaintenanceStatus }))}
-                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                         >
                           <option>Open</option>
                           <option>In Progress</option>
@@ -7404,6 +7494,12 @@ locationLabels.set(normalizedLocation, displayLocation);
                           <option>Completed</option>
                           <option>Cancelled</option>
                         </select>
+                        {maintenanceForm.id &&
+                        (maintenanceForm.status === "Completed" || maintenanceForm.status === "Cancelled") ? (
+                          <p className="mt-1 text-xs text-slate-500">
+                            Closed tickets keep their final status. Use a new ticket for a new or recurring fault.
+                          </p>
+                        ) : null}
                       </div>
 
                       <div>
@@ -7655,7 +7751,7 @@ locationLabels.set(normalizedLocation, displayLocation);
                               </div>
 
                               <div className="flex shrink-0 flex-col gap-3 lg:items-end">
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-2 sm:gap-2">
                                   <Badge text={record.status || "Open"} className={statusPillClass(record.status)} />
                                   <Badge text={record.priority || "Medium"} className={statusPillClass(record.priority)} />
                                   {relatedAsset ? (
@@ -7703,13 +7799,24 @@ locationLabels.set(normalizedLocation, displayLocation);
                                       Cancel
                                     </button>
                                   ) : null}
-                                  {record.status !== "Open" ? (
+                                  {record.status !== "Open" &&
+                                  record.status !== "Completed" &&
+                                  record.status !== "Cancelled" ? (
                                     <button
                                       type="button"
                                       onClick={() => updateMaintenanceStatus(record, "Open")}
                                       className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
                                     >
-                                      Reopen
+                                      Return to Open
+                                    </button>
+                                  ) : null}
+                                  {record.status === "Completed" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => createRecurringFault(record)}
+                                      className="rounded-xl bg-violet-100 px-3 py-2 text-xs font-semibold text-violet-700"
+                                    >
+                                      ↻ Recurring Fault
                                     </button>
                                   ) : null}
                                 </div>
@@ -9502,36 +9609,45 @@ locationLabels.set(normalizedLocation, displayLocation);
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => openMobileTab("scan")}
-        className="fixed bottom-24 right-4 z-40 grid h-16 w-16 place-items-center rounded-full bg-cyan-700 text-2xl text-white shadow-2xl md:hidden print:hidden"
-        aria-label="Open scanner"
-      >
-        📷
-      </button>
+      <div className="h-28 md:hidden print:hidden" aria-hidden="true" />
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 py-2 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur md:hidden print:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+      <nav
+        className="fixed bottom-3 left-1/2 z-50 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 rounded-3xl border border-slate-200 bg-white/95 p-2 shadow-[0_12px_40px_rgba(15,23,42,0.22)] backdrop-blur md:hidden print:hidden"
+        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        aria-label="Mobile navigation"
+      >
+        <div className="grid grid-cols-5 gap-1">
           {[
             ["dashboard", "🏠", "Home"],
             ["scan", "📷", "Scan"],
             ["inventory", "📦", "Assets"],
             ["maintenance", "🛠️", "Repair"],
             ["audit", "✅", "Audit"],
-          ].map(([key, icon, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => openMobileTab(key as typeof activeTab)}
-              className={`rounded-2xl px-2 py-2 text-center text-[11px] font-bold ${
-                activeTab === key ? "bg-slate-900 text-white" : "text-slate-600"
-              }`}
-            >
-              <span className="block text-xl leading-none">{icon}</span>
-              <span className="mt-1 block">{label}</span>
-            </button>
-          ))}
+          ].map(([key, icon, label]) => {
+            const isActive = activeTab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => openMobileTab(key as typeof activeTab)}
+                className={`min-w-0 rounded-2xl px-1.5 py-2.5 text-center text-[10px] font-bold transition active:scale-95 ${
+                  isActive
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-500 hover:bg-slate-100"
+                }`}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <span
+                  className={`mx-auto grid h-7 w-7 place-items-center rounded-xl text-lg leading-none ${
+                    isActive ? "bg-white/10" : ""
+                  }`}
+                >
+                  {icon}
+                </span>
+                <span className="mt-1 block truncate">{label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
     </div>
