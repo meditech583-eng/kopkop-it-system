@@ -2377,7 +2377,26 @@ async function loadComponentHistory() {
       return update.includes("not") || update.includes("pending");
     }).length;
     const poorPerformance = enrichedAssets.filter((a) => (a.performance || "").toLowerCase().includes("poor")).length;
-    const avgScore = total ? Math.round(enrichedAssets.reduce((sum, asset) => sum + asset.displayScore, 0) / total) : 0;
+
+    // Only include assets with meaningful health evidence in the fleet-health average.
+    // This prevents newly registered / non-ICT electrical assets with no audit or
+    // telemetry from being treated as automatically 100% healthy.
+    const assessedAssets = enrichedAssets.filter((asset) => {
+      const hasTelemetry = [
+        asset.performance,
+        asset.booting_speed,
+        asset.desktop_loading_speed,
+        asset.windows_update,
+        asset.online_status,
+      ].some((value) => String(value || "").trim().length > 0);
+
+      return Boolean(asset.lastAudit) || hasTelemetry || asset.displayScore < 100;
+    });
+
+    const assessedHealth = assessedAssets.length;
+    const avgScore = assessedHealth
+      ? Math.round(assessedAssets.reduce((sum, asset) => sum + asset.displayScore, 0) / assessedHealth)
+      : 0;
     const critical = enrichedAssets.filter((a) => a.displayScore < 40).length;
     const needsUpgrade = enrichedAssets.filter((a) => a.displayScore >= 40 && a.displayScore < 65).length;
     const startOfToday = new Date();
@@ -2399,6 +2418,7 @@ async function loadComponentHistory() {
       outdated,
       poorPerformance,
       avgScore,
+      assessedHealth,
       critical,
       needsUpgrade,
       seenToday,
@@ -6402,7 +6422,34 @@ locationLabels.set(normalizedLocation, displayLocation);
       </tr>`).join("");
 
     const planned = formatLines(reportPlannedActivities).map((line) => `<li>${safeHtml(line)}</li>`).join("");
-    const management = formatLines(reportManagementNotes).map((line) => `<li>${safeHtml(line)}</li>`).join("");
+
+    const manualManagementNotes = formatLines(reportManagementNotes);
+    const automaticManagementNotes: string[] = [];
+    const highPriorityActive = active.filter((record) =>
+      record.priority === "High" || record.priority === "Critical"
+    );
+
+    if (criticalAssets.length > 0) {
+      automaticManagementNotes.push(
+        `${criticalAssets.length} critical device${criticalAssets.length === 1 ? "" : "s"} currently require${criticalAssets.length === 1 ? "s" : ""} ICT attention.`
+      );
+    }
+
+    if (highPriorityActive.length > 0) {
+      automaticManagementNotes.push(
+        `${highPriorityActive.length} high-priority or critical unresolved maintenance ticket${highPriorityActive.length === 1 ? "" : "s"} remain${highPriorityActive.length === 1 ? "s" : ""} active.`
+      );
+    }
+
+    if (active.some((record) => record.status === "Waiting for Parts")) {
+      const waitingCount = active.filter((record) => record.status === "Waiting for Parts").length;
+      automaticManagementNotes.push(
+        `${waitingCount} maintenance ticket${waitingCount === 1 ? " is" : "s are"} waiting for parts or replacement items.`
+      );
+    }
+
+    const managementNotes = [...automaticManagementNotes, ...manualManagementNotes];
+    const management = managementNotes.map((line) => `<li>${safeHtml(line)}</li>`).join("");
     const summary = `During the reporting period, ICT recorded ${tickets.length} maintenance/support ticket${tickets.length === 1 ? "" : "s"}, completed ${completed.length}, conducted ${audits.length} audit${audits.length === 1 ? "" : "s"}, and added ${assetsAdded.length} asset${assetsAdded.length === 1 ? "" : "s"} to the register. There are currently ${active.length} unresolved maintenance ticket${active.length === 1 ? "" : "s"} and ${criticalAssets.length} device${criticalAssets.length === 1 ? "" : "s"} classified as critical.`;
 
     const content = `
@@ -6434,7 +6481,8 @@ locationLabels.set(normalizedLocation, displayLocation);
           <tr><td>New assets registered during period</td><td>${assetsAdded.length}</td></tr>
           <tr><td>Device audits completed during period</td><td>${audits.length}</td></tr>
           <tr><td>Total assets currently registered</td><td>${stats.total}</td></tr>
-          <tr><td>Average fleet health</td><td>${stats.avgScore}%</td></tr>
+          <tr><td>Devices included in health average</td><td>${stats.assessedHealth}</td></tr>
+          <tr><td>Average assessed device health</td><td>${stats.assessedHealth ? `${stats.avgScore}%` : "Not enough health data"}</td></tr>
         </tbody></table>
       </div>
       <div class="section">
@@ -6443,7 +6491,7 @@ locationLabels.set(normalizedLocation, displayLocation);
         <tbody>${attentionRows || '<tr><td colspan="5">No devices currently require management attention.</td></tr>'}</tbody></table>
       </div>
       <div class="section"><h2>6. Planned Activities</h2><ul>${planned || '<li>No planned activities entered.</li>'}</ul></div>
-      <div class="section"><h2>7. Management Attention / Notes</h2><ul>${management || '<li>No additional management notes entered.</li>'}</ul></div>
+      <div class="section"><h2>7. Management Attention / Notes</h2><ul>${management || '<li>No current critical or high-priority management attention items identified.</li>'}</ul></div>
     `;
 
     openPrintWindow(
