@@ -1423,7 +1423,17 @@ const [deletingComponentId, setDeletingComponentId] =
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [performanceFilter, setPerformanceFilter] = useState("All");
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "profile" | "scan" | "discovery" | "labels" | "maintenance" | "audit" | "history">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "profile" | "scan" | "discovery" | "labels" | "maintenance" | "audit" | "history" | "reports">("dashboard");
+  const [reportStartDate, setReportStartDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 6);
+    return date.toISOString().slice(0, 10);
+  });
+  const [reportEndDate, setReportEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reportPlannedActivities, setReportPlannedActivities] = useState(
+    "Continue user support and hardware maintenance\nFollow up unresolved maintenance tickets\nUpdate ICT asset and audit records\nConduct preventative maintenance where required"
+  );
+  const [reportManagementNotes, setReportManagementNotes] = useState("");
   const [printMode, setPrintMode] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
@@ -2395,6 +2405,35 @@ async function loadComponentHistory() {
       changesToday,
     };
   }, [enrichedAssets, hardwareChanges]);
+
+  const activityReportData = useMemo(() => {
+    const start = new Date(`${reportStartDate}T00:00:00`);
+    const end = new Date(`${reportEndDate}T23:59:59.999`);
+    const inRange = (value?: string | null) => {
+      if (!value) return false;
+      const time = new Date(value).getTime();
+      return Number.isFinite(time) && time >= start.getTime() && time <= end.getTime();
+    };
+
+    const tickets = maintenanceRecords.filter((record) =>
+      inRange(record.date_reported || record.created_at) ||
+      inRange(record.updated_at) ||
+      inRange(record.closed_date) ||
+      inRange(record.repair_date)
+    );
+    const completed = tickets.filter((record) => record.status === "Completed");
+    const active = maintenanceRecords.filter((record) =>
+      record.status !== "Completed" && record.status !== "Cancelled"
+    );
+    const audits = deviceChecks.filter((check) => inRange(check.inspection_date || check.created_at));
+    const assetsAdded = assets.filter((asset) => inRange(asset.created_at));
+    const criticalAssets = enrichedAssets.filter((asset) => asset.healthLabel === "Critical");
+    const attentionAssets = enrichedAssets.filter((asset) =>
+      asset.healthLabel === "Watch" || asset.healthLabel === "Needs Upgrade" || asset.healthLabel === "Critical"
+    );
+
+    return { tickets, completed, active, audits, assetsAdded, criticalAssets, attentionAssets };
+  }, [reportStartDate, reportEndDate, maintenanceRecords, deviceChecks, assets, enrichedAssets]);
 
   const fleetIntelligence = useMemo(() => {
     const now = Date.now();
@@ -6331,6 +6370,92 @@ locationLabels.set(normalizedLocation, displayLocation);
     return "pill critical";
   }
 
+  function exportActivityReportPdf() {
+    const { tickets, completed, active, audits, assetsAdded, criticalAssets, attentionAssets } = activityReportData;
+    const formatLines = (value: string) => value.split("\n").map((line) => line.trim()).filter(Boolean);
+
+    const completedRows = completed.map((record) => `
+      <tr>
+        <td>${safeHtml(record.asset_tag || "-")}</td>
+        <td>${safeHtml(record.item_name || "-")}</td>
+        <td>${safeHtml(record.issue || "-")}</td>
+        <td>${safeHtml(record.technician || record.assigned_to || "-")}</td>
+        <td>${safeHtml(formatDate(record.closed_date || record.repair_date || record.updated_at || record.date_reported))}</td>
+      </tr>`).join("");
+
+    const outstandingRows = active.map((record) => `
+      <tr>
+        <td>${safeHtml(record.asset_tag || "-")}</td>
+        <td>${safeHtml(record.issue || "-")}</td>
+        <td>${safeHtml(record.status || "Open")}</td>
+        <td>${safeHtml(record.priority || "Medium")}</td>
+        <td>${safeHtml(record.technician || record.assigned_to || "-")}</td>
+      </tr>`).join("");
+
+    const attentionRows = attentionAssets.slice().sort((a, b) => a.displayScore - b.displayScore).map((asset) => `
+      <tr>
+        <td>${safeHtml(asset.asset_tag)}</td>
+        <td>${safeHtml(asset.item_name)}</td>
+        <td>${safeHtml(asset.location || "-")}</td>
+        <td>${safeHtml(asset.healthLabel)} (${asset.displayScore}%)</td>
+        <td>${safeHtml(asset.recommendation)}</td>
+      </tr>`).join("");
+
+    const planned = formatLines(reportPlannedActivities).map((line) => `<li>${safeHtml(line)}</li>`).join("");
+    const management = formatLines(reportManagementNotes).map((line) => `<li>${safeHtml(line)}</li>`).join("");
+    const summary = `During the reporting period, ICT recorded ${tickets.length} maintenance/support ticket${tickets.length === 1 ? "" : "s"}, completed ${completed.length}, conducted ${audits.length} audit${audits.length === 1 ? "" : "s"}, and added ${assetsAdded.length} asset${assetsAdded.length === 1 ? "" : "s"} to the register. There are currently ${active.length} unresolved maintenance ticket${active.length === 1 ? "" : "s"} and ${criticalAssets.length} device${criticalAssets.length === 1 ? "" : "s"} classified as critical.`;
+
+    const content = `
+      <div class="section">
+        <h2>1. Executive Summary</h2>
+        <p>${safeHtml(summary)}</p>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="label">Tickets Recorded</div><div class="value">${tickets.length}</div></div>
+        <div class="card"><div class="label">Completed</div><div class="value">${completed.length}</div></div>
+        <div class="card"><div class="label">Outstanding</div><div class="value">${active.length}</div></div>
+        <div class="card"><div class="label">Audits Conducted</div><div class="value">${audits.length}</div></div>
+        <div class="card"><div class="label">Assets Added</div><div class="value">${assetsAdded.length}</div></div>
+        <div class="card"><div class="label">Critical Devices</div><div class="value">${criticalAssets.length}</div></div>
+      </div>
+      <div class="section">
+        <h2>2. Completed IT Support & Maintenance</h2>
+        <table><thead><tr><th>Asset</th><th>Device</th><th>Issue / Activity</th><th>Technician</th><th>Completed</th></tr></thead>
+        <tbody>${completedRows || '<tr><td colspan="5">No completed maintenance activities in this reporting period.</td></tr>'}</tbody></table>
+      </div>
+      <div class="section">
+        <h2>3. Outstanding Issues</h2>
+        <table><thead><tr><th>Asset</th><th>Issue</th><th>Status</th><th>Priority</th><th>Assigned</th></tr></thead>
+        <tbody>${outstandingRows || '<tr><td colspan="5">No outstanding maintenance issues.</td></tr>'}</tbody></table>
+      </div>
+      <div class="section">
+        <h2>4. Asset Management & Audit Activity</h2>
+        <table><tbody>
+          <tr><td>New assets registered during period</td><td>${assetsAdded.length}</td></tr>
+          <tr><td>Device audits completed during period</td><td>${audits.length}</td></tr>
+          <tr><td>Total assets currently registered</td><td>${stats.total}</td></tr>
+          <tr><td>Average fleet health</td><td>${stats.avgScore}%</td></tr>
+        </tbody></table>
+      </div>
+      <div class="section">
+        <h2>5. Devices Requiring Attention / Recommendations</h2>
+        <table><thead><tr><th>Asset</th><th>Device</th><th>Location</th><th>Health</th><th>Recommendation</th></tr></thead>
+        <tbody>${attentionRows || '<tr><td colspan="5">No devices currently require management attention.</td></tr>'}</tbody></table>
+      </div>
+      <div class="section"><h2>6. Planned Activities</h2><ul>${planned || '<li>No planned activities entered.</li>'}</ul></div>
+      <div class="section"><h2>7. Management Attention / Notes</h2><ul>${management || '<li>No additional management notes entered.</li>'}</ul></div>
+    `;
+
+    openPrintWindow(
+      "KOPKOP College ICT Activity Report",
+      buildPdfShell(
+        "KOPKOP College ICT Weekly Activity & Support Report",
+        `Reporting period: ${formatDate(reportStartDate)} to ${formatDate(reportEndDate)}. Prepared from ICT system records.`,
+        content
+      )
+    );
+  }
+
   function exportSummaryPdf() {
     const departmentRows = departmentGraphData
       .map((item) => `<tr><td>${item.label}</td><td>${item.value}</td></tr>`)
@@ -6726,6 +6851,9 @@ locationLabels.set(normalizedLocation, displayLocation);
             <div className="border-t border-white/10 bg-white/[0.035] p-5 lg:w-[390px] lg:border-l lg:border-t-0">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Management actions</p>
               <div className="mt-4 grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setActiveTab("reports")} className="col-span-2 rounded-2xl bg-blue-600 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-blue-500">
+                  <span className="mb-2 block text-xl">📝</span>Weekly Activity Report
+                </button>
                 <button type="button" onClick={exportSummaryPdf} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/15">
                   <span className="mb-2 block text-xl">📊</span>Summary PDF
                 </button>
@@ -6758,6 +6886,7 @@ locationLabels.set(normalizedLocation, displayLocation);
             ["discovery", "◉", pendingLiveDevices > 0 ? `Discovery (${pendingLiveDevices})` : "Discovery"],
             ["labels", "⌗", "QR Labels"],
             ["maintenance", "⚒", "Maintenance"],
+            ["reports", "▤", "Reports"],
             ["audit", "✓", "Quick Audit"],
             ["history", "≡", "Audit History"],
           ].map(([key, icon, label]) => (
@@ -6793,6 +6922,9 @@ locationLabels.set(normalizedLocation, displayLocation);
               </button>
               <button type="button" onClick={() => openMobileTab("audit")} className="rounded-2xl bg-emerald-600 px-4 py-4 text-left text-sm font-bold text-white">
                 <span className="block text-2xl">📋</span>New Audit
+              </button>
+              <button type="button" onClick={() => openMobileTab("reports")} className="col-span-2 rounded-2xl bg-blue-600 px-4 py-4 text-left text-sm font-bold text-white">
+                <span className="block text-2xl">📝</span>Weekly Activity Report
               </button>
               <button type="button" onClick={() => openMobileTab("discovery")} className="col-span-2 rounded-2xl bg-violet-700 px-4 py-4 text-left text-sm font-bold text-white">
                 <span className="block text-2xl">📡</span>
@@ -7404,6 +7536,51 @@ locationLabels.set(normalizedLocation, displayLocation);
           </div>
         )}
 
+
+        {activeTab === "reports" && (
+          <div id="tab-reports" className="scroll-mt-24 mt-6 space-y-6">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <SectionTitle title="Weekly IT Activity & Support Report" subtitle="Generate a management report directly from maintenance, audit, inventory and device-health records." />
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <StatCard label="Tickets in Period" value={activityReportData.tickets.length} hint="Created or updated" />
+                <StatCard label="Completed" value={activityReportData.completed.length} hint="Resolved work" />
+                <StatCard label="Outstanding" value={activityReportData.active.length} hint="Current unresolved" />
+                <StatCard label="Audits" value={activityReportData.audits.length} hint="Completed in period" />
+                <StatCard label="Assets Added" value={activityReportData.assetsAdded.length} hint="New registrations" />
+                <StatCard label="Critical" value={activityReportData.criticalAssets.length} hint="Management attention" />
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-semibold text-slate-700">Report start date
+                  <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 font-normal" />
+                </label>
+                <label className="text-sm font-semibold text-slate-700">Report end date
+                  <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 font-normal" />
+                </label>
+              </div>
+
+              <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                <label className="text-sm font-semibold text-slate-700">Planned activities
+                  <textarea rows={7} value={reportPlannedActivities} onChange={(e) => setReportPlannedActivities(e.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 font-normal" placeholder="One activity per line" />
+                </label>
+                <label className="text-sm font-semibold text-slate-700">Management attention / notes
+                  <textarea rows={7} value={reportManagementNotes} onChange={(e) => setReportManagementNotes(e.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 font-normal" placeholder="Enter approvals, purchases, risks or decisions management should see. One item per line." />
+                </label>
+              </div>
+
+              <div className="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-5">
+                <h3 className="font-bold text-slate-900">Report contents</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Executive summary, KPI totals, completed support and maintenance, outstanding issues, asset and audit activity, devices requiring attention, recommendations, planned work and management notes.</p>
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button type="button" onClick={exportActivityReportPdf} className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-500">Print / Save Activity Report PDF</button>
+                <button type="button" onClick={() => setActiveTab("dashboard")} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700">Back to Executive Dashboard</button>
+              </div>
+            </section>
+          </div>
+        )}
 
         {activeTab === "maintenance" && (
           <div id="tab-maintenance" className="scroll-mt-24 mt-6 space-y-6">
